@@ -1,0 +1,19 @@
+{
+  "name": "ws",
+  "owner": {
+    "name": "Ravi Dasari"
+  },
+  "metadata": {
+    "description": "Claude Code plugins for the ws multi-repo workspace manager."
+  },
+  "plugins": [
+    {
+      "name": "repos-overview",
+      "source": "./mods/repos-overview",
+      "description": "/repos lists every git repo in the workspace with its branch and a short count of uncommitted changes.",
+      "author": {
+        "name": "Ravi Dasari"
+      }
+    }
+  ]
+}
