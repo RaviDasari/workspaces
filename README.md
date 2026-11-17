@@ -229,10 +229,22 @@ ws --cd <name>
 
 `mods/repos-overview` adds a `/repos` slash command to Claude Code. It lists every git repo in the session directory with its branch, ahead/behind, and a short count of staged, modified, and untracked files. Start Claude in a workspace (`ws --claude <name>`) and run `/repos`.
 
+Install it with one command from any terminal:
+
 ```bash
-claude --plugin-dir "$(brew --prefix)/share/ws/mods/repos-overview"   # Homebrew install
-claude --plugin-dir mods/repos-overview                                # from a clone
+claude plugin marketplace add RaviDasari/workspaces && claude plugin install repos-overview@ws
 ```
+
+Or inside Claude Code:
+
+```text
+/plugin marketplace add RaviDasari/workspaces
+/plugin install repos-overview@ws
+```
+
+It then loads in every session. Update with `claude plugin marketplace update ws`, remove with `claude plugin uninstall repos-overview@ws`.
+
+To try it without installing: `claude --plugin-dir mods/repos-overview`.
 
 ## License
 
