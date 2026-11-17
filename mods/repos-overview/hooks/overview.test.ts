@@ -25,8 +25,8 @@ describe('parseStatus', () => {
 describe('formatOverview', () => {
   test('one row per repo plus a summary', () => {
     const rows = [parseStatus('api', '## main\n'), parseStatus('web', '## dev [ahead 1]\n M x\n')]
-    const text = formatOverview('idp', rows, ['broken'])
-    expect(text).toContain('idp: 2 repos')
+    const text = formatOverview('shop', rows, ['broken'])
+    expect(text).toContain('shop: 2 repos')
     expect(text).toContain('✓ api')
     expect(text).toContain('● web')
     expect(text).toContain('dev ↑1')
