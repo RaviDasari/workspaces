@@ -3,13 +3,58 @@
 # Writes a VS Code / Cursor multi-root workspace and Claude Code directory access.
 set -euo pipefail
 
-WS_ROOT="${WS_ROOT:-/workspaces}"
+# Where workspaces live, first match wins:
+#   1. ws --root <dir> <command>      (this run only)
+#   2. $WS_ROOT                       (environment)
+#   3. root=<dir> in the config file  (set once with: ws --config root <dir>)
+#   4. ~/workspaces, or /workspaces if that already exists and ~/workspaces does not
+WS_CONFIG="${WS_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/ws/config}"
+
+config_get() { # key -> value, empty if unset
+  local line
+  [[ -f "$WS_CONFIG" ]] || return 0
+  while IFS= read -r line; do
+    [[ "$line" == "$1="* ]] && { printf '%s' "${line#*=}"; return 0; }
+  done < "$WS_CONFIG"
+  return 0
+}
+
+# Make a user-typed path absolute: expand a leading ~, anchor relative paths at $PWD.
+abs_path() {
+  local p=$1
+  case "$p" in
+    "~") p=$HOME ;;
+    "~/"*) p=$HOME/${p#"~/"} ;;
+    /*) ;;
+    *) p=$PWD/$p ;;
+  esac
+  printf '%s' "${p%/}"
+}
+
+ROOT_SOURCE=""
+WS_ROOT_FROM_ENV=${WS_ROOT:+1}
+resolve_root() {
+  local v
+  if [[ -n "${WS_ROOT:-}" ]]; then
+    ROOT_SOURCE="WS_ROOT environment variable"
+  elif v=$(config_get root) && [[ -n "$v" ]]; then
+    WS_ROOT=$v; ROOT_SOURCE="config file $WS_CONFIG"
+  elif [[ ! -d "$HOME/workspaces" && -d /workspaces ]]; then
+    WS_ROOT=/workspaces; ROOT_SOURCE="legacy default (existing /workspaces)"
+  else
+    WS_ROOT=$HOME/workspaces; ROOT_SOURCE="default"
+  fi
+  WS_ROOT=$(abs_path "$WS_ROOT")
+}
+resolve_root
 
 usage() {
   cat <<EOF
 Usage: ws <option> [args]
 
-  --setup                         Create $WS_ROOT and make it owned by you (uses sudo if needed)
+  --setup                         Create the workspaces folder (sudo only if it needs it)
+  --config [root [<dir>|--unset]] Show settings, print the workspaces folder, or set it once
+  --root <dir> <command> ...      Use <dir> as the workspaces folder for this run only
   --create <name>                 Create an empty workspace and its editor/Claude configs
   --add <name> <path> [linkname]  Symlink <path> into workspace <name>
   --remove <name> <linkname>      Remove a symlink from workspace <name> (target untouched)
@@ -59,10 +104,15 @@ Generated inside each workspace (overwritten by --add, --remove, --rename, --syn
   .gitignore                      Regenerated; lets the workspace shell be its own git repo
 
 Environment:
-  WS_ROOT         Workspace parent (default /workspaces)
+  WS_ROOT         Workspaces folder (overrides the config file; default ~/workspaces)
+  WS_CONFIG       Config file (default ~/.config/ws/config)
   WS_CODE_BIN     VS Code command (default code)
   WS_CURSOR_BIN   Cursor command (default cursor)
   WS_CLAUDE_BIN   Claude Code command (default claude)
+
+Workspaces folder (now: $WS_ROOT, from $ROOT_SOURCE):
+  one-time:   ws --config root ~/code/workspaces
+  per run:    ws --root /tmp/ws-test --list      or      WS_ROOT=/tmp/ws-test ws --list
 
 Examples:
   ws --create idp
@@ -435,7 +485,7 @@ A multi-project workspace managed by [ws](https://github.com/).
 
 ## Set up on a new machine
 \`\`\`bash
-git clone <this-repo-url> "\${WS_ROOT:-/workspaces}/$name"
+git clone <this-repo-url> "\$(ws --config root)/$name"
 ws --bootstrap $name      # clones the repos in workspace.conf, recreates worktrees, relinks
 ws --claude $name         # or: ws --code $name, ws --cursor $name
 \`\`\`
@@ -485,9 +535,53 @@ cmd_setup() {
     echo "$WS_ROOT already set up."
     return
   fi
-  sudo mkdir -p "$WS_ROOT"
-  sudo chown "$(id -u):$(id -g)" "$WS_ROOT"
+  if ! mkdir -p "$WS_ROOT" 2>/dev/null; then
+    sudo mkdir -p "$WS_ROOT"
+    sudo chown "$(id -u):$(id -g)" "$WS_ROOT"
+  fi
   echo "Set up $WS_ROOT"
+}
+
+cmd_config() {
+  case "${1:-}" in
+    "")
+      echo "root     $WS_ROOT"
+      echo "         ($ROOT_SOURCE)"
+      echo "config   $WS_CONFIG$([[ -f "$WS_CONFIG" ]] || echo ' (not created yet)')"
+      ;;
+    root)
+      shift
+      if [[ $# -eq 0 ]]; then
+        printf '%s\n' "$WS_ROOT"
+      elif [[ "$1" == "--unset" && $# -eq 1 ]]; then
+        if [[ -f "$WS_CONFIG" ]]; then
+          local tmp line; tmp=$(mktemp)
+          while IFS= read -r line || [[ -n "$line" ]]; do
+            [[ "$line" == root=* ]] || printf '%s\n' "$line"
+          done < "$WS_CONFIG" > "$tmp"
+          mv "$tmp" "$WS_CONFIG"
+        fi
+        echo "Cleared the saved workspaces folder; falling back to the default."
+      elif [[ $# -eq 1 ]]; then
+        local new tmp line
+        new=$(abs_path "$1")
+        [[ -e "$new" && ! -d "$new" ]] && die "$new exists and is not a directory"
+        mkdir -p "$(dirname "$WS_CONFIG")"
+        tmp=$(mktemp)
+        { [[ -f "$WS_CONFIG" ]] && while IFS= read -r line || [[ -n "$line" ]]; do
+            [[ "$line" == root=* ]] || printf '%s\n' "$line"
+          done < "$WS_CONFIG"
+          printf 'root=%s\n' "$new"; } > "$tmp" || true
+        mv "$tmp" "$WS_CONFIG"
+        echo "Workspaces folder set to $new"
+        [[ -d "$new" ]] || echo "It does not exist yet; run: ws --setup"
+        [[ -z "${WS_ROOT_FROM_ENV:-}" ]] || echo "Note: \$WS_ROOT is set in your environment and overrides this."
+      else
+        die "usage: ws --config root [<dir>|--unset]"
+      fi
+      ;;
+    *) die "usage: ws --config [root [<dir>|--unset]]" ;;
+  esac
 }
 
 cmd_create() {
@@ -944,10 +1038,16 @@ cmd_publish() {
 }
 
 need_realpath
+if [[ "${1:-}" == "--root" ]]; then
+  [[ $# -ge 3 ]] || die "usage: ws --root <dir> <command> [args]"
+  WS_ROOT=$(abs_path "$2"); ROOT_SOURCE="--root flag"
+  shift 2
+fi
 [[ $# -ge 1 ]] || { usage; exit 1; }
 opt="$1"; shift
 case "$opt" in
   --setup)  cmd_setup "$@" ;;
+  --config) cmd_config "$@" ;;
   --create) cmd_create "$@" ;;
   --add)    cmd_add "$@" ;;
   --remove) cmd_remove "$@" ;;

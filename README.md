@@ -42,11 +42,23 @@ Or keep the clone and point the command at it:
 ln -sfn "$PWD/ws" ~/utils/ws
 ```
 
-Workspaces live in `/workspaces` unless you set `WS_ROOT`.
+Workspaces live in `~/workspaces` by default. To keep them somewhere else, set it once:
 
 ```bash
-ws --setup          # only if /workspaces does not exist yet
+ws --config root ~/code/workspaces   # saved in ~/.config/ws/config
+ws --config                          # show the folder in use and where it came from
+ws --config root --unset             # back to the default
+ws --setup                           # create the folder if it does not exist yet
 ```
+
+Override it for a single run, or per shell:
+
+```bash
+ws --root /tmp/scratch --create demo
+WS_ROOT=/tmp/scratch ws --list
+```
+
+Precedence, first match wins: `--root <dir>`, the `WS_ROOT` environment variable, the saved config, then `~/workspaces`. If you already have a `/workspaces` folder and no `~/workspaces`, `ws` keeps using `/workspaces` until you pick a folder.
 
 ## Quick start
 
@@ -84,7 +96,7 @@ REPOS=(
 Commit that file (see `--publish`), and on another machine:
 
 ```bash
-git clone <shell-repo-url> /workspaces/idp
+git clone <shell-repo-url> "$(ws --config root)/idp"
 ws --bootstrap idp      # clones what is missing, recreates worktrees, relinks. Safe to rerun.
 ```
 
@@ -170,7 +182,7 @@ ws --claude idp -- --resume
 Or start Claude yourself from the workspace directory:
 
 ```bash
-cd /workspaces/idp
+cd "$(ws --config root)/idp"
 claude
 ```
 
@@ -184,6 +196,8 @@ Claude's Git status follows the directory you start in. The symlink folder is no
 
 ```text
 ws --setup
+ws --config [root [<dir>|--unset]]
+ws --root <dir> <command> ...
 ws --create <name> [git-url...]
 ws --clone <name> <url> [dir] [-b branch]
 ws --bootstrap <name>
