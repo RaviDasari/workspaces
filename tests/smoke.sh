@@ -205,4 +205,28 @@ printf 'y\n' | "$ws" --delete multi >/dev/null 2>&1 && fail "delete should refus
 [[ -d $WS_ROOT/multi/site/.git ]] || fail "refused delete removed a clone"
 
 
+# ---- workspaces folder: default, config file, env, --root ----
+home="$tmp/home"; mkdir -p "$home"
+w() { env -u WS_ROOT -u XDG_CONFIG_HOME HOME="$home" "$ws" "$@"; }
+[[ "$(w --config root)" == "$home/workspaces" ]] || fail "default root: $(w --config root)"
+out=$(w --config); grep -q "default" <<<"$out" || fail "config should name the source"
+w --setup >/dev/null; [[ -d $home/workspaces ]] || fail "--setup should create ~/workspaces without sudo"
+
+w --config root "~/code/ws-here" >/dev/null
+[[ "$(w --config root)" == "$home/code/ws-here" ]] || fail "saved root: $(w --config root)"
+grep -qx "root=$home/code/ws-here" "$home/.config/ws/config" || fail "config file content"
+w --setup >/dev/null
+w --create one >/dev/null
+[[ -d $home/code/ws-here/one ]] || fail "create should use the saved root"
+[[ "$(env -u XDG_CONFIG_HOME HOME="$home" WS_ROOT="$tmp/envroot" "$ws" --config root)" == "$tmp/envroot" ]] || fail "env must beat config"
+[[ "$(w --root "$tmp/flagroot" --config root)" == "$tmp/flagroot" ]] || fail "--root must win"
+w --root "$tmp/flagroot" --setup >/dev/null; w --root "$tmp/flagroot" --create two >/dev/null
+[[ -d $tmp/flagroot/two && ! -e $home/code/ws-here/two ]] || fail "--root create"
+w --root >/dev/null 2>&1 && fail "--root with no command should fail" || true
+w --config root --unset >/dev/null
+[[ "$(w --config root)" == "$home/workspaces" ]] || fail "unset root"
+! grep -q '^root=' "$home/.config/ws/config" || fail "unset left the line"
+w --config bogus >/dev/null 2>&1 && fail "bad --config key" || true
+
+
 echo "ok"
