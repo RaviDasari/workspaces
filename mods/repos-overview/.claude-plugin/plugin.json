@@ -1,0 +1,1 @@
+{ "name": "repos-overview", "version": "0.1.0", "description": "/repos lists every git repo in the workspace with its branch and a short count of uncommitted changes." }

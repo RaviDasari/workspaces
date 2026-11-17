@@ -4,7 +4,7 @@ set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 ws=$root/ws
-tmp=$(mktemp -d)
+tmp=$(cd "$(mktemp -d)" && pwd -P)
 trap 'rm -rf "$tmp"' EXIT
 
 export WS_ROOT="$tmp/workspaces"
@@ -119,5 +119,90 @@ rmdir "$WS_ROOT/demo2/notes"
 printf 'y\n' | "$ws" --delete demo2 >/dev/null
 [[ ! -e "$WS_ROOT/demo2" ]] || fail "workspace was not deleted"
 [[ -d "$tmp/src/api" ]] || fail "delete removed a project target"
+
+# ---- clone-based workspaces, worktrees, merged assistant config ----
+export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
+mkremote() { # name : bare remote with one commit carrying a Claude agent and a bare-md skill
+  local seed="$tmp/seed-$1"
+  git init -q -b main "$seed"
+  mkdir -p "$seed/.claude/agents" "$seed/.claude/skills"
+  echo "# $1 agent" > "$seed/.claude/agents/helper.md"
+  printf '# Deploy %s\nsteps\n' "$1" > "$seed/.claude/skills/deploy.md"
+  git -C "$seed" add -A && git -C "$seed" commit -q -m init
+  git clone -q --bare "$seed" "$tmp/remote-$1.git"
+}
+mkremote api; mkremote web
+
+"$ws" --create multi "$tmp/remote-api.git" >/dev/null
+"$ws" --clone multi "$tmp/remote-web.git" site -b main >/dev/null
+[[ -d $WS_ROOT/multi/remote-api/.git && -d $WS_ROOT/multi/site/.git ]] || fail "clones missing"
+grep -q '"remote-api|' "$WS_ROOT/multi/workspace.conf" || fail "conf missing api"
+grep -q '"site|.*|main"' "$WS_ROOT/multi/workspace.conf" || fail "conf missing branch"
+"$ws" --clone multi "$tmp/remote-web.git" site >/dev/null || fail "same-url reclone should be a no-op"
+"$ws" --clone multi "$tmp/remote-api.git" site >/dev/null 2>&1 && fail "different url into existing dir should fail" || true
+
+# merged .claude links, relative, resolving
+l="$WS_ROOT/multi/.claude/agents/site--helper.md"
+[[ -L $l && "$(readlink "$l")" == ../../site/.claude/agents/helper.md && -e $l ]] || fail "agent link: $(readlink "$l")"
+[[ -e $WS_ROOT/multi/.claude/skills/remote-api--deploy.md ]] || fail "skill link"
+# generated shell files and gitignore (no trailing slash so symlinked projects match too)
+[[ -f $WS_ROOT/multi/CLAUDE.md && -f $WS_ROOT/multi/AGENTS.md && -f $WS_ROOT/multi/README.md ]] || fail "docs"
+grep -qx '/site' "$WS_ROOT/multi/.gitignore" || fail "gitignore"
+
+# --assistants: claude -> codex wraps frontmatter-less skills
+"$ws" --assistants multi codex >/dev/null
+head -1 "$WS_ROOT/multi/site/.codex/skills/deploy/SKILL.md" | grep -q '^---$' || fail "codex skill frontmatter"
+grep -q 'description: Deploy web' "$WS_ROOT/multi/site/.codex/skills/deploy/SKILL.md" || fail "codex skill description"
+[[ -e $WS_ROOT/multi/.codex/agents/site--helper.md ]] || fail "codex agent link"
+"$ws" --assistants multi bogus >/dev/null 2>&1 && fail "bad mode accepted" || true
+
+# worktrees
+"$ws" --wt-add multi feature/pay >/dev/null
+[[ -d $WS_ROOT/multi/site--feature-pay && -d $WS_ROOT/multi/remote-api--feature-pay ]] || fail "worktrees"
+[[ "$(git -C "$WS_ROOT/multi/site--feature-pay" branch --show-current)" == feature/pay ]] || fail "wt branch"
+grep -q 'site--feature-pay|worktree:site|feature/pay' "$WS_ROOT/multi/workspace.conf" || fail "wt conf"
+[[ -e $WS_ROOT/multi/.claude/agents/site--feature-pay--helper.md ]] || fail "wt agent link"
+out=$("$ws" --wt-add multi feature/pay 2>&1); grep -q "No new worktrees" <<<"$out" || fail "wt-add not idempotent"
+"$ws" --code multi >/dev/null
+grep -q 'site--feature-pay' "$WS_ROOT/multi/multi.code-workspace" || fail "wt not an editor folder"
+"$ws" --wt-add multi x site--feature-pay >/dev/null 2>&1 && fail "worktree of worktree" || true
+
+echo dirty > "$WS_ROOT/multi/site--feature-pay/f.txt"
+"$ws" --status multi > "$tmp/status"
+grep -q 'site--feature-pay *wt *feature/pay *dirty (1 files)' "$tmp/status" || fail "status: $(cat "$tmp/status")"
+grep -q 'site *clone *main *dirty (1 files)' "$tmp/status" || fail "status clone: $(cat "$tmp/status")"
+"$ws" --wt-rm multi feature/pay 2>"$tmp/err" >/dev/null
+grep -q "uncommitted" "$tmp/err" || fail "dirty wt not protected"
+[[ -d $WS_ROOT/multi/site--feature-pay && ! -e $WS_ROOT/multi/remote-api--feature-pay ]] || fail "wt-rm partial"
+rm "$WS_ROOT/multi/site--feature-pay/f.txt"
+"$ws" --wt-rm multi feature/pay >/dev/null
+[[ ! -e $WS_ROOT/multi/site--feature-pay ]] || fail "wt-rm"
+! grep -q '^ *"[^"]*|worktree:' "$WS_ROOT/multi/workspace.conf" || fail "wt conf not cleaned"
+git -C "$WS_ROOT/multi/site" show-ref --verify -q refs/heads/feature/pay || fail "branch must be kept"
+[[ ! -L $WS_ROOT/multi/.claude/agents/site--feature-pay--helper.md ]] || fail "stale link"
+
+# pull: new upstream commit arrives; a non-git dir is skipped
+git -C "$tmp/seed-web" commit -q --allow-empty -m two && git -C "$tmp/seed-web" push -q "$tmp/remote-web.git" HEAD:main
+mkdir "$WS_ROOT/multi/notes"
+"$ws" --pull multi >/dev/null 2>&1
+[[ "$(git -C "$WS_ROOT/multi/site" log --oneline | wc -l | tr -d ' ')" == 2 ]] || fail "pull"
+
+# bootstrap rebuilds from workspace.conf alone (new machine)
+"$ws" --wt-add multi hotfix site >/dev/null
+cp "$WS_ROOT/multi/workspace.conf" "$tmp/conf.keep"
+rm -rf "$WS_ROOT/multi" && mkdir "$WS_ROOT/multi" && cp "$tmp/conf.keep" "$WS_ROOT/multi/workspace.conf"
+"$ws" --bootstrap multi >/dev/null
+[[ -d $WS_ROOT/multi/site/.git && -d $WS_ROOT/multi/remote-api/.git && -e $WS_ROOT/multi/site--hotfix/.git ]] || fail "bootstrap"
+[[ -e $WS_ROOT/multi/.claude/agents/site--helper.md ]] || fail "bootstrap relink"
+out=$("$ws" --bootstrap multi 2>&1); grep -q "site present" <<<"$out" || fail "bootstrap not idempotent"
+
+# publish to a plain git url, then delete refuses while real checkouts exist
+git init -q --bare "$tmp/shell.git"
+printf 'y\n' | "$ws" --publish multi "$tmp/shell.git" >/dev/null 2>&1
+git -C "$tmp/shell.git" show main:workspace.conf >/dev/null || fail "publish"
+! git -C "$tmp/shell.git" ls-tree -r --name-only main | grep -q '^site' || fail "publish leaked a project"
+printf 'y\n' | "$ws" --delete multi >/dev/null 2>&1 && fail "delete should refuse real clones" || true
+[[ -d $WS_ROOT/multi/site/.git ]] || fail "refused delete removed a clone"
+
 
 echo "ok"
