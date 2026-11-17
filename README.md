@@ -63,10 +63,10 @@ Precedence, first match wins: `--root <dir>`, the `WS_ROOT` environment variable
 ## Quick start
 
 ```bash
-ws --create idp
-ws --add idp ~/src/api
-ws --add idp ~/src/web web
-ws --show idp
+ws --create shop
+ws --add shop ~/src/api
+ws --add shop ~/src/web web
+ws --show shop
 ```
 
 `web` is the name inside the workspace. Omit it to use the directory's basename.
@@ -78,9 +78,9 @@ Every child directory is included, whether or not it is a Git repository. Broken
 Instead of linking repos you already have, let `ws` clone them:
 
 ```bash
-ws --create idp git@github.com:acme/api.git https://github.com/acme/web.git
-ws --clone idp git@github.com:acme/worker.git              # directory defaults to "worker"
-ws --clone idp git@github.com:acme/web.git web-next -b next # custom dir, branch
+ws --create shop git@github.com:acme/api.git https://github.com/acme/web.git
+ws --clone shop git@github.com:acme/worker.git              # directory defaults to "worker"
+ws --clone shop git@github.com:acme/web.git web-next -b next # custom dir, branch
 ```
 
 Clones are recorded in `workspace.conf`, in the same format virtual-workspace uses:
@@ -96,8 +96,8 @@ REPOS=(
 Commit that file (see `--publish`), and on another machine:
 
 ```bash
-git clone <shell-repo-url> "$(ws --config root)/idp"
-ws --bootstrap idp      # clones what is missing, recreates worktrees, relinks. Safe to rerun.
+git clone <shell-repo-url> "$(ws --config root)/shop"
+ws --bootstrap shop      # clones what is missing, recreates worktrees, relinks. Safe to rerun.
 ```
 
 Symlinked and cloned projects mix freely in one workspace. Only clones and worktrees are recorded in `workspace.conf`, because symlink targets are specific to one machine.
@@ -109,9 +109,9 @@ On every sync, `<project>/.claude/{agents,commands,skills,hooks}/*` is linked as
 Convert between the two tools inside each project:
 
 ```bash
-ws --assistants idp codex    # .claude agents/skills -> .codex  (bare .md skills get frontmatter)
-ws --assistants idp claude   # .codex -> .claude
-ws --assistants idp both
+ws --assistants shop codex    # .claude agents/skills -> .codex  (bare .md skills get frontmatter)
+ws --assistants shop claude   # .codex -> .claude
+ws --assistants shop both
 ```
 
 This writes into the projects' own `.claude`/`.codex` folders and overwrites same-named files there. It prints every file it copies.
@@ -119,11 +119,11 @@ This writes into the projects' own `.claude`/`.codex` folders and overwrites sam
 ## Worktrees across repos
 
 ```bash
-ws --wt-add idp feature/checkout          # <repo>--feature-checkout for every repo
-ws --wt-add idp feature/checkout api web  # only these
-ws --status idp
-ws --pull idp                             # git pull --ff-only everywhere, reports failures, keeps going
-ws --wt-rm idp feature/checkout           # dirty worktrees are skipped; branches are kept
+ws --wt-add shop feature/checkout          # <repo>--feature-checkout for every repo
+ws --wt-add shop feature/checkout api web  # only these
+ws --status shop
+ws --pull shop                             # git pull --ff-only everywhere, reports failures, keeps going
+ws --wt-rm shop feature/checkout           # dirty worktrees are skipped; branches are kept
 ```
 
 A new worktree uses the existing local branch, else `origin/<branch>`, else a new branch from HEAD. Worktrees are real directories in the workspace, so they appear in the editor workspace, in Claude's `--add-dir` list, and in the merged agent links. `--wt-add` is incremental: it skips worktrees that already exist.
@@ -141,8 +141,8 @@ web                            link   main                      clean
 ## Publishing the workspace shell
 
 ```bash
-ws --publish idp                          # private GitHub repo via gh
-ws --publish idp git@github.com:me/idp.git
+ws --publish shop                          # private GitHub repo via gh
+ws --publish shop git@github.com:me/shop.git
 ```
 
 Asks first, then commits only `.gitignore`, `CLAUDE.md`, `AGENTS.md`, `README.md`, and `workspace.conf`. Project contents are never tracked.
@@ -154,15 +154,15 @@ Asks first, then commits only `.gitignore`, `CLAUDE.md`, `AGENTS.md`, `README.md
 Both editors open the same file:
 
 ```bash
-ws --code idp
-ws --cursor idp
+ws --code shop
+ws --cursor shop
 ```
 
-That runs `code` or `cursor` on `<workspace>/idp.code-workspace`. Set `WS_CODE_BIN` or `WS_CURSOR_BIN` if the command has another name.
+That runs `code` or `cursor` on `<workspace>/shop.code-workspace`. Set `WS_CODE_BIN` or `WS_CURSOR_BIN` if the command has another name.
 
 Open that file with **File → Open Workspace from File…**. Opening the symlink folder instead shows a single directory and, in Source Control, no repository for the linked projects.
 
-The workspace file stores absolute paths. After you move a project, run `ws --sync idp`.
+The workspace file stores absolute paths. After you move a project, run `ws --sync shop`.
 
 ## Claude Code
 
@@ -170,19 +170,19 @@ Two ways to open the same workspace:
 
 ```bash
 # File access, skills, and (via an env var) each project's CLAUDE.md.
-ws --claude idp
+ws --claude shop
 
 # Git status follows one project. The others are still --add-dir.
-ws --claude idp --repo web
+ws --claude shop --repo web
 
 # Anything after the name is passed through to claude.
-ws --claude idp -- --resume
+ws --claude shop -- --resume
 ```
 
 Or start Claude yourself from the workspace directory:
 
 ```bash
-cd "$(ws --config root)/idp"
+cd "$(ws --config root)/shop"
 claude
 ```
 

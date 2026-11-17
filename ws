@@ -115,16 +115,16 @@ Workspaces folder (now: $WS_ROOT, from $ROOT_SOURCE):
   per run:    ws --root /tmp/ws-test --list      or      WS_ROOT=/tmp/ws-test ws --list
 
 Examples:
-  ws --create idp
-  ws --add idp ~/src/api
-  ws --add idp ~/src/web
-  ws --cursor idp
-  ws --code idp
-  ws --claude idp
-  ws --claude idp --repo web
-  ws --create idp git@github.com:acme/api.git git@github.com:acme/web.git
-  ws --wt-add idp feature/checkout
-  ws --status idp
+  ws --create shop
+  ws --add shop ~/src/api
+  ws --add shop ~/src/web
+  ws --cursor shop
+  ws --code shop
+  ws --claude shop
+  ws --claude shop --repo web
+  ws --create shop git@github.com:acme/api.git git@github.com:acme/web.git
+  ws --wt-add shop feature/checkout
+  ws --status shop
 EOF
 }
 
