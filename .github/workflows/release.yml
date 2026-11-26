@@ -18,7 +18,9 @@ jobs:
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --title "ws ${GITHUB_REF_NAME#v}" --generate-notes
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 ||
+            gh release create "$GITHUB_REF_NAME" --title "ws ${GITHUB_REF_NAME#v}" --generate-notes
       - name: Bump Homebrew formula
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -26,6 +28,7 @@ jobs:
           set -euo pipefail
           url="https://github.com/$GITHUB_REPOSITORY/archive/refs/tags/$GITHUB_REF_NAME.tar.gz"
           sha=$(curl -fsSL "$url" | shasum -a 256 | cut -d' ' -f1)
+          gh auth setup-git
           gh repo clone RaviDasari/homebrew-tap tap
           cd tap
           sed -i '' -E "s|^  url \".*\"|  url \"$url\"|; s|^  sha256 \".*\"|  sha256 \"$sha\"|" Formula/ws.rb
