@@ -1,6 +1,6 @@
 # ws
 
-[![CI](https://github.com/RaviDasari/workspaces/actions/workflows/ci.yml/badge.svg)](https://github.com/RaviDasari/workspaces/actions/workflows/ci.yml)
+[![CI](https://github.com/RaviDasari/workspaces/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/RaviDasari/workspaces/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/RaviDasari/workspaces)](https://github.com/RaviDasari/workspaces/releases/latest)
 [![License: MIT](https://img.shields.io/github/license/RaviDasari/workspaces)](LICENSE)
 [![Homebrew](https://img.shields.io/badge/homebrew-RaviDasari%2Ftap-FBB040?logo=homebrew&logoColor=white)](https://github.com/RaviDasari/homebrew-tap)
