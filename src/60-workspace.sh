@@ -136,6 +136,8 @@ cmd_delete() {
   done < <(find "$dir" -mindepth 1 -maxdepth 1)
   read -r -p "Delete workspace '$1' (symlinks and generated configs only, targets are kept)? [y/N] " ans
   [[ "$ans" == [yY]* ]] || { echo "Aborted."; return; }
+  local label
+  while IFS= read -r label; do cp_drop "$1" "$label"; done < <(cp_labels "$1")
   find "$dir" -mindepth 1 -maxdepth 1 -type l -delete
   rm -f "$dir/$1.code-workspace" "$dir/workspace.conf"
   local g

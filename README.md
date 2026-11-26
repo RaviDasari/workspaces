@@ -1,5 +1,7 @@
 # ws
 
+[![CI](https://github.com/RaviDasari/workspaces/actions/workflows/ci.yml/badge.svg)](https://github.com/RaviDasari/workspaces/actions/workflows/ci.yml)
+
 `ws` groups repositories into one workspace folder, whether they are symlinks to repos you already have or fresh clones, then writes the files VS Code, Cursor, Claude Code, and Codex need to open that group again. It also manages feature worktrees across repos, merges every repo's agents and skills into one session, and can rebuild the whole workspace on another machine from a manifest.
 
 ![Overview](assets/overview.png)
@@ -338,6 +340,15 @@ bash tests/smoke.sh  # runs ws against a temp folder; no network
 ```
 
 Commit `ws` together with `src/`. The smoke test fails if they disagree.
+
+CI runs the build check and smoke test on Ubuntu and macOS (also under macOS `/bin/bash` 3.2), plus shellcheck on `src/*.sh`. Run `shellcheck build.sh tests/smoke.sh src/*.sh` locally to match.
+
+### Releasing
+
+1. Add a `## X.Y.Z` section to `CHANGELOG.md`. Its text becomes the release notes.
+2. Commit, then `git tag vX.Y.Z && git push origin main vX.Y.Z`.
+
+The Release workflow reruns the checks, publishes the GitHub release, and updates `Formula/ws.rb` in [`RaviDasari/homebrew-tap`](https://github.com/RaviDasari/homebrew-tap) with the new tarball URL and sha256. It needs the repo secret `HOMEBREW_TAP_TOKEN`: a fine-grained token with Contents read/write on the tap only. It expires, so regenerate it and re-run `gh secret set HOMEBREW_TAP_TOKEN` if the tap step fails with a 401 or 403.
 
 ## License
 

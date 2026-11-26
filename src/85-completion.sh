@@ -39,6 +39,8 @@ _ws() {
       --wt-add) COMPREPLY=(\$(compgen -W "--run --copy \$(cut -f1 "\$root/\$ws/.ws/projects.tsv" 2>/dev/null)" -- "\$cur")); return ;;
       --wt-rm) COMPREPLY=(\$(compgen -W "--delete-branch \$(cut -f1 "\$root/\$ws/.ws/projects.tsv" 2>/dev/null)" -- "\$cur")); return ;;
       --exec) COMPREPLY=(\$(compgen -W "--only --git-only --" -- "\$cur")); return ;;
+      --checkpoint) COMPREPLY=(\$(compgen -W "--list --rm --only --json \$(ls "\$root/\$ws/.ws/checkpoints" 2>/dev/null)" -- "\$cur")); return ;;
+      --restore) COMPREPLY=(\$(compgen -W "--only \$(ls "\$root/\$ws/.ws/checkpoints" 2>/dev/null)" -- "\$cur")); return ;;
       --remove|--claude) COMPREPLY=(\$(compgen -W "\$(cut -f1 "\$root/\$ws/.ws/projects.tsv" 2>/dev/null)" -- "\$cur")); return ;;
       --show|--status) COMPREPLY=(\$(compgen -W "--json" -- "\$cur")); return ;;
     esac
@@ -78,6 +80,8 @@ _ws() {
       --wt-add) compadd -- --run --copy \$projects ;;
       --wt-rm) compadd -- --delete-branch \$projects ;;
       --exec) compadd -- --only --git-only -- ;;
+      --checkpoint) compadd -- --list --rm --only --json \${(f)"\$(ls "\$root/\$ws/.ws/checkpoints" 2>/dev/null)"} ;;
+      --restore) compadd -- --only \${(f)"\$(ls "\$root/\$ws/.ws/checkpoints" 2>/dev/null)"} ;;
       --remove|--claude) compadd -- \$projects ;;
       --show|--status) compadd -- --json ;;
     esac
@@ -101,6 +105,10 @@ function __ws_projects
     set -l ws (commandline -opc)[3]
     cut -f1 (command ws --config root)/\$ws/.ws/projects.tsv 2>/dev/null
 end
+function __ws_checkpoints
+    set -l ws (commandline -opc)[3]
+    ls (command ws --config root)/\$ws/.ws/checkpoints 2>/dev/null
+end
 function __ws_at_name
     set -l t (commandline -opc)
     test (count \$t) -eq 2; and contains -- (string replace -- '--' '' \$t[2]) $names
@@ -114,6 +122,8 @@ complete -c ws -n '__ws_at_name' -a '(__ws_workspaces)'
 complete -c ws -n 'test (count (commandline -opc)) -ge 3; and contains -- (commandline -opc)[2] --remove --claude' -a '(__ws_projects)'
 complete -c ws -n 'test (count (commandline -opc)) -ge 3; and contains -- (commandline -opc)[2] --wt-add' -a '(__ws_projects) --run --copy'
 complete -c ws -n 'test (count (commandline -opc)) -ge 3; and contains -- (commandline -opc)[2] --wt-rm' -a '(__ws_projects) --delete-branch'
+complete -c ws -n 'test (count (commandline -opc)) -ge 3; and contains -- (commandline -opc)[2] --checkpoint' -a '(__ws_checkpoints) --list --rm --only --json'
+complete -c ws -n 'test (count (commandline -opc)) -ge 3; and contains -- (commandline -opc)[2] --restore' -a '(__ws_checkpoints) --only'
 complete -c ws -n 'test (count (commandline -opc)) -ge 3; and contains -- (commandline -opc)[2] --assistants' -a 'codex claude both'
 complete -c ws -n 'contains -- (commandline -opc)[2] --show --status --list' -a '--json'
 complete -c ws -n 'contains -- (commandline -opc)[2] --completion' -a 'bash zsh fish'

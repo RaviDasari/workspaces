@@ -44,6 +44,8 @@ case "$opt" in
   --status) cmd_status "$@" ;;
   --wt-add) cmd_wt_add "$@" ;;
   --wt-rm)  cmd_wt_rm "$@" ;;
+  --checkpoint) cmd_checkpoint "$@" ;;
+  --restore) cmd_restore "$@" ;;
   --assistants) cmd_assistants "$@" ;;
   --publish) cmd_publish "$@" ;;
   -h|--help) usage ;;

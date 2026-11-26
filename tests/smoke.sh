@@ -271,6 +271,63 @@ rm -f "$WS_ROOT/multi/site/.env"
 rm -f "$WS_ROOT/multi/site--envtest/.env" "$WS_ROOT/multi/site--envtest/ran.flag"
 "$ws" --wt-rm multi envtest site >/dev/null
 
+# ---- checkpoints: save everything, let an "agent" wreck it, restore exactly, undo the restore ----
+s=$WS_ROOT/multi/site a=$WS_ROOT/multi/remote-api
+"$ws" --wt-add multi cpwt site >/dev/null
+wt=$WS_ROOT/multi/site--cpwt
+printf '*.log\n' >> "$s/.git/info/exclude"
+echo staged > "$s/st.txt"; git -C "$s" add st.txt; echo unstaged >> "$s/st.txt"
+echo new > "$s/untracked.txt"; echo keep > "$s/debug.log"; echo wt > "$wt/w.txt"
+git -C "$s" status --porcelain > "$tmp/cp.before"
+head_s=$(git -C "$s" rev-parse HEAD); head_a=$(git -C "$a" rev-parse HEAD)
+"$ws" --checkpoint multi before > "$tmp/out" || fail "checkpoint: $(cat "$tmp/out")"
+grep -q 'site: main @ .*, [0-9]* changed' "$tmp/out" || fail "checkpoint summary: $(cat "$tmp/out")"
+git -C "$s" status --porcelain | cmp -s - "$tmp/cp.before" || fail "checkpoint touched the working tree"
+"$ws" --checkpoint multi before >/dev/null 2>&1 && fail "duplicate label accepted" || true
+"$ws" --checkpoint multi --bad >/dev/null 2>&1 && fail "bad checkpoint flag accepted" || true
+
+git -C "$s" add -A && git -C "$s" commit -q -m agent
+echo junk > "$s/junk.txt"; rm "$wt/w.txt"
+git -C "$a" checkout -q -b scratch && git -C "$a" commit -q --allow-empty -m scratch
+git -C "$s" gc -q --prune=now   # the checkpoint must survive garbage collection
+"$ws" --restore multi before > "$tmp/out" || fail "restore: $(cat "$tmp/out")"
+[[ "$(git -C "$s" rev-parse HEAD)" == "$head_s" ]] || fail "site HEAD not restored"
+git -C "$s" status --porcelain | cmp -s - "$tmp/cp.before" || fail "site state: $(git -C "$s" status --porcelain)"
+[[ "$(cat "$s/st.txt")" == $'staged\nunstaged' && "$(git -C "$s" show :st.txt)" == staged ]] || fail "staged/unstaged split"
+[[ ! -e $s/junk.txt && -f $s/debug.log && -f $wt/w.txt ]] || fail "untracked removed, ignored kept, worktree restored"
+[[ "$(git -C "$a" branch --show-current)" == main && "$(git -C "$a" rev-parse HEAD)" == "$head_a" ]] || fail "api branch"
+
+undo=$(sed -n 's/.*Undo with: ws --restore multi //p' "$tmp/out")
+[[ -n "$undo" ]] || fail "no undo label: $(cat "$tmp/out")"
+"$ws" --restore multi "$undo" >/dev/null || fail "undo restore"
+[[ -f $s/junk.txt && "$(git -C "$s" log -1 --format=%s)" == agent ]] || fail "undo lost the newer state"
+[[ "$(git -C "$a" branch --show-current)" == scratch && ! -e $wt/w.txt ]] || fail "undo api/worktree"
+"$ws" --restore multi before --only remote-api >/dev/null || fail "restore --only"
+[[ "$(git -C "$a" branch --show-current)" == main && -f $s/junk.txt ]] || fail "--only touched other projects"
+"$ws" --restore multi nope >/dev/null 2>&1 && fail "restore of a missing label" || true
+
+"$ws" --checkpoint multi --only site one >/dev/null
+"$ws" --checkpoint multi --list | grep -q '^one  *[0-9]*m  *1$' || fail "list: $("$ws" --checkpoint multi --list)"
+"$ws" --checkpoint multi --list --json | python3 -c '
+import json, sys
+d = {c["label"]: c for c in json.load(sys.stdin)}
+assert [p["name"] for p in d["one"]["projects"]] == ["site"], d
+assert {p["name"] for p in d["before"]["projects"]} == {"remote-api", "site", "site--cpwt"}, d'
+"$ws" --checkpoint multi --rm $("$ws" --checkpoint multi --list | awk 'NR > 1 {print $1}') >/dev/null
+[[ -z "$(git -C "$s" for-each-ref refs/ws-checkpoints)" && -z "$(git -C "$a" for-each-ref refs/ws-checkpoints)" ]] || fail "--rm left refs"
+[[ "$("$ws" --checkpoint multi --list)" == "No checkpoints in 'multi'." ]] || fail "--rm left files"
+git -C "$a" checkout -q main
+git -C "$s" reset -q --hard "$head_s" && git -C "$s" clean -fdq && rm -f "$s/debug.log"
+"$ws" --wt-rm multi cpwt site >/dev/null
+
+# --delete drops checkpoint refs from linked repos it does not own
+git init -q -b main "$tmp/src/linked" && git -C "$tmp/src/linked" commit -q --allow-empty -m one
+"$ws" --create cpl >/dev/null && "$ws" --add cpl "$tmp/src/linked" >/dev/null
+"$ws" --checkpoint cpl >/dev/null
+[[ -n "$(git -C "$tmp/src/linked" for-each-ref refs/ws-checkpoints)" ]] || fail "checkpoint ref missing"
+printf 'y\n' | "$ws" --delete cpl >/dev/null
+[[ -z "$(git -C "$tmp/src/linked" for-each-ref refs/ws-checkpoints)" ]] || fail "--delete left checkpoint refs"
+
 # completions are valid shell and complete flags, workspaces and projects
 "$ws" --completion bash | bash -n || fail "bash completion syntax"
 if command -v zsh >/dev/null 2>&1; then "$ws" --completion zsh | zsh -n || fail "zsh completion syntax"; fi

@@ -16,8 +16,8 @@ need_ws() {
 
 # Every command, and the ones whose first argument is a workspace (those accept a --list
 # number; PICK_OPTS also show a menu when run with no name at a terminal).
-ALL_OPTS="--setup --config --root --create --add --remove --rename --delete --list --show --sync --open --code --cursor --claude --cd --clone --bootstrap --pull --fetch --status --exec --wt-add --wt-rm --assistants --publish --completion --help"
-NAME_OPTS=" --add --remove --rename --delete --show --sync --open --code --cursor --claude --cd --clone --bootstrap --pull --fetch --status --exec --wt-add --wt-rm --assistants --publish "
+ALL_OPTS="--setup --config --root --create --add --remove --rename --delete --list --show --sync --open --code --cursor --claude --cd --clone --bootstrap --pull --fetch --status --exec --wt-add --wt-rm --checkpoint --restore --assistants --publish --completion --help"
+NAME_OPTS=" --add --remove --rename --delete --show --sync --open --code --cursor --claude --cd --clone --bootstrap --pull --fetch --status --exec --wt-add --wt-rm --checkpoint --restore --assistants --publish "
 PICK_OPTS=" --open --code --cursor --claude --cd --show --status --pull --fetch "
 
 # Workspace names in `ws --list` order; a number N anywhere a <name> is expected means the Nth one.

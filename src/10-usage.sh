@@ -41,6 +41,14 @@ Clone-based workspaces (record repos in workspace.conf, rebuild anywhere):
   --wt-rm <name> <branch> [--delete-branch] [repo...]
                                   Remove those worktrees (skips dirty ones); --delete-branch also
                                   drops each branch git considers merged
+  --checkpoint <name> [label] [--only a,b]
+                                  Save every git project's branch, commits, staged and unstaged
+                                  changes, and untracked files (not ignored ones); changes nothing
+  --checkpoint <name> --list [--json] | --rm <label...>
+                                  List or delete checkpoints
+  --restore <name> <label> [--only a,b]
+                                  Put projects back to a checkpoint (resets branches, removes newer
+                                  untracked files); saves the current state first, so it can be undone
   --assistants <name> codex|claude|both
                                   Copy agents/skills between .claude and .codex in each project
   --publish <name> [git-url]      Commit the workspace shell and push it (gh private repo if no url)
@@ -90,6 +98,8 @@ Examples:
   ws --exec shop --git-only -- git log -1 --oneline
   ws --wt-add shop feature/checkout --copy .env --run "npm ci"
   ws --wt-rm shop feature/checkout --delete-branch
+  ws --checkpoint shop before-refactor
+  ws --restore shop before-refactor
   eval "$(ws --completion bash)"
 EOF
 }
