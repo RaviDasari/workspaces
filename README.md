@@ -1,6 +1,11 @@
 # ws
 
 [![CI](https://github.com/RaviDasari/workspaces/actions/workflows/ci.yml/badge.svg)](https://github.com/RaviDasari/workspaces/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/RaviDasari/workspaces)](https://github.com/RaviDasari/workspaces/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/RaviDasari/workspaces)](LICENSE)
+[![Homebrew](https://img.shields.io/badge/homebrew-RaviDasari%2Ftap-FBB040?logo=homebrew&logoColor=white)](https://github.com/RaviDasari/homebrew-tap)
+![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
+![Bash 3.2+](https://img.shields.io/badge/bash-3.2%2B-4EAA25?logo=gnubash&logoColor=white)
 
 `ws` groups repositories into one workspace folder, whether they are symlinks to repos you already have or fresh clones, then writes the files VS Code, Cursor, Claude Code, and Codex need to open that group again. It also manages feature worktrees across repos, merges every repo's agents and skills into one session, and can rebuild the whole workspace on another machine from a manifest.
 
