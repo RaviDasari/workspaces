@@ -1,6 +1,8 @@
 # ws
 
-[![CI](https://github.com/RaviDasari/workspaces/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/RaviDasari/workspaces/actions/workflows/ci.yml)
+[![Build](https://github.com/RaviDasari/workspaces/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/RaviDasari/workspaces/actions/workflows/build.yml)
+[![Test](https://github.com/RaviDasari/workspaces/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/RaviDasari/workspaces/actions/workflows/test.yml)
+[![Lint](https://github.com/RaviDasari/workspaces/actions/workflows/lint.yml/badge.svg?branch=main)](https://github.com/RaviDasari/workspaces/actions/workflows/lint.yml)
 [![Release](https://img.shields.io/github/v/release/RaviDasari/workspaces)](https://github.com/RaviDasari/workspaces/releases/latest)
 [![License: MIT](https://img.shields.io/github/license/RaviDasari/workspaces)](LICENSE)
 [![Homebrew](https://img.shields.io/badge/homebrew-RaviDasari%2Ftap-FBB040?logo=homebrew&logoColor=white)](https://github.com/RaviDasari/homebrew-tap)
@@ -346,7 +348,7 @@ bash tests/smoke.sh  # runs ws against a temp folder; no network
 
 Commit `ws` together with `src/`. The smoke test fails if they disagree.
 
-CI runs the build check and smoke test on Ubuntu and macOS (also under macOS `/bin/bash` 3.2), plus shellcheck on `src/*.sh`. Run `shellcheck build.sh tests/smoke.sh src/*.sh` locally to match.
+Three workflows run on every push and PR: Build (`./build.sh --check`), Test (the smoke test on Ubuntu and macOS, also under macOS `/bin/bash` 3.2) and Lint (shellcheck). Run `shellcheck build.sh tests/smoke.sh src/*.sh` locally to match.
 
 ### Releasing
 
