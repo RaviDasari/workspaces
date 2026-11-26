@@ -17,19 +17,19 @@
 
 Several tools manage many repos or many worktrees. `ws` is the one that also sets up the editor and the AI assistant for the group.
 
-| | `ws` | [virtual-workspace](https://github.com/filipealva/virtual-workspace) | [Canopy](https://github.com/ashmitb95/canopy) | [Grove](https://pypi.org/project/gw-cli/) | [mani](https://github.com/alajmo/mani) / [meta](https://www.npmjs.com/meta) | [Worktrunk](https://github.com/ofek/worktrunk) |
+| | `ws` | [virtual-workspace](https://github.com/filipealva/virtual-workspace) | [Canopy](https://github.com/ashmitb95/canopy-cli) | [Grove](https://github.com/nicksenap/grove) | [mani](https://github.com/alajmo/mani) / [meta](https://github.com/mateodelnorte/meta) | [Worktrunk](https://github.com/max-sixty/worktrunk) |
 | --- | --- | --- | --- | --- | --- | --- |
 | Many repos as one unit | yes | yes | yes | yes | yes | no (one repo) |
-| Link repos you already have | yes | no | ? | ? | ? | n/a |
-| Worktree per repo, same branch | yes | yes | yes | yes | no | yes |
-| VS Code / Cursor multi-root file | yes | no | ? | ? | no | no |
-| Claude Code / Codex config merged across repos | yes | yes | ? | CLAUDE.md copy | no | per-repo plugin |
-| Run a command in every repo | yes | no | ? | ? | yes | no |
-| Checkpoint and restore every repo at once | yes | no | ? | ? | ? | ? |
-| Machine-readable output for agents | `--json` + a Claude skill | no | MCP server | ? | ? | ? |
-| Install | one bash file | scripts | Python | Python | Go / Node | Rust |
+| Link repos you already have | yes | no | partial (`init` discovers repos) | partial (registers repo folders) | yes | partial (works in any clone) |
+| Worktree per repo, same branch | yes | yes | yes | yes | mani: partial, meta: no | yes (one repo) |
+| VS Code / Cursor multi-root file | yes | no | undocumented | undocumented | undocumented | no |
+| Claude Code / Codex config merged across repos | yes | yes | no (MCP server and a skill) | no (a skill that teaches agents `gw`) | undocumented | no (Claude Code plugin) |
+| Run a command in every repo | yes | no | one repo at a time | partial (fixed git commands: status, sync) | yes | across one repo's worktrees |
+| Checkpoint and restore every repo at once | yes | no | no (feature-tagged stash only) | undocumented | undocumented | no (per-branch backup only) |
+| Machine-readable output for agents | `--json` + a Claude skill | no | `--json` + MCP server | `-o json` + MCP server + a skill | mani: no, meta: undocumented | `--format=json` + Claude Code plugin |
+| Install | one bash file | scripts | Python | Python or Go | Go / Node | Rust |
 
-`?` means I did not check. The other columns come from each project's description and may be out of date, so check their repos before relying on them.
+Checked against each project's README and docs in November 2026; nothing was installed or run. "Undocumented" means the pages I read do not mention it, not that the feature is absent. Canopy's original repo is now a VS Code extension, so the link goes to its CLI, `canopy-cli`. Grove's docs pages were partly unreachable, so check its repo before relying on its column.
 
 Use something else if you want an MCP server rather than a CLI the agent shells out to (Canopy), or a task runner with tags and a YAML config (mani).
 
