@@ -307,13 +307,15 @@ undo=$(sed -n 's/.*Undo with: ws --restore multi //p' "$tmp/out")
 "$ws" --restore multi nope >/dev/null 2>&1 && fail "restore of a missing label" || true
 
 "$ws" --checkpoint multi --only site one >/dev/null
-"$ws" --checkpoint multi --list | grep -q '^one  *[0-9]*m  *1$' || fail "list: $("$ws" --checkpoint multi --list)"
+out=$("$ws" --checkpoint multi --list); grep -q '^one  *[0-9]*m  *1$' <<<"$out" || fail "list: $out"
 "$ws" --checkpoint multi --list --json | python3 -c '
 import json, sys
 d = {c["label"]: c for c in json.load(sys.stdin)}
 assert [p["name"] for p in d["one"]["projects"]] == ["site"], d
 assert {p["name"] for p in d["before"]["projects"]} == {"remote-api", "site", "site--cpwt"}, d'
-"$ws" --checkpoint multi --rm $("$ws" --checkpoint multi --list | awk 'NR > 1 {print $1}') >/dev/null
+labels=()
+while read -r label; do labels+=("$label"); done < <("$ws" --checkpoint multi --list | awk 'NR > 1 {print $1}')
+"$ws" --checkpoint multi --rm "${labels[@]}" >/dev/null
 [[ -z "$(git -C "$s" for-each-ref refs/ws-checkpoints)" && -z "$(git -C "$a" for-each-ref refs/ws-checkpoints)" ]] || fail "--rm left refs"
 [[ "$("$ws" --checkpoint multi --list)" == "No checkpoints in 'multi'." ]] || fail "--rm left files"
 git -C "$a" checkout -q main
