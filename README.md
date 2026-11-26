@@ -1,4 +1,4 @@
-# ws
+# ws: one workspace for many git repos
 
 [![Build](https://github.com/RaviDasari/workspaces/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/RaviDasari/workspaces/actions/workflows/build.yml)
 [![Test](https://github.com/RaviDasari/workspaces/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/RaviDasari/workspaces/actions/workflows/test.yml)
@@ -9,9 +9,19 @@
 ![Platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)
 ![Bash 3.2+](https://img.shields.io/badge/bash-3.2%2B-4EAA25?logo=gnubash&logoColor=white)
 
-`ws` groups repositories into one workspace folder, whether they are symlinks to repos you already have or fresh clones, then writes the files VS Code, Cursor, Claude Code, and Codex need to open that group again. It also manages feature worktrees across repos, merges every repo's agents and skills into one session, and can rebuild the whole workspace on another machine from a manifest.
+**Group your repos into one workspace, then open it in VS Code, Cursor, Claude Code or Codex with every repo in reach.** A single bash file, no dependencies.
 
-![Overview](assets/overview.png)
+- **One workspace, any editor:** link repos you already have or clone new ones; `ws` writes the VS Code / Cursor multi-root file and the Claude Code config.
+- **Worktrees across repos:** one command per feature branch, in every repo.
+- **Agents see everything:** every repo's agents and skills merged into one Claude Code or Codex session.
+- **Portable:** rebuild the whole workspace on another machine from a manifest; checkpoint and restore every repo at once.
+
+![ws groups several git repos into one workspace and opens it in VS Code, Cursor, Claude Code and Codex](assets/overview.png)
+
+```bash
+brew install RaviDasari/tap/ws
+ws --create shop && ws --add shop ~/code/api && ws --add shop ~/code/web && ws --claude shop
+```
 
 ## Why ws
 
