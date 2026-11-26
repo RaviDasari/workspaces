@@ -106,3 +106,11 @@ Skipped by request: SHA pinning (old #3), CI (old #7, done separately on GitHub)
 ## Backlog
 - [ ] **SHA pinning**: `ws --lock <name>` records each clone's and worktree's commit SHA (e.g. in `workspace.lock`); `ws --bootstrap <name> --locked` checks out exactly those SHAs for a reproducible rebuild. Today `workspace.conf` stores only URL and branch, so bootstrap gets whatever is current.
 - [x] **CI (GitHub Actions)**: run `tests/smoke.sh` and `./build.sh --check` on macOS and Linux, plus shellcheck on `src/*.sh`. Include macOS `/bin/bash` 3.2, which already caught one bug.
+
+## Default to the current workspace
+
+- [x] `current_ws`, `is_ws_ref`, `CWD_OPTS` in `src/20-core.sh`; dispatcher rule in `src/99-main.sh`
+- [x] `--list` marks the current workspace (`*`, `"current"` in JSON)
+- [x] Usage, README, CHANGELOG; smoke tests for each case in the plan
+
+Review: inside `$WS_ROOT/<name>/...` (logical or physical path) every `NAME_OPTS` command except `--delete`/`--rename` defaults to that workspace. An explicit workspace name or number still wins. `--sync` with no name there syncs only the current workspace.

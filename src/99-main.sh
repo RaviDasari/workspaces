@@ -7,14 +7,19 @@ fi
 [[ $# -ge 1 ]] || { usage; exit 1; }
 opt="$1"; shift
 
-# Commands whose first argument is a workspace: accept its --list number, and for the
-# ones in PICK_OPTS offer a menu when no name is given at a terminal.
+# Commands whose first argument is a workspace: accept its --list number. With no workspace
+# given, CWD_OPTS use the one the shell is in; PICK_OPTS offer a menu at a terminal.
 if [[ "$NAME_OPTS" == *" $opt "* ]]; then
-  if [[ $# -ge 1 ]]; then
+  cur=""
+  if [[ "$CWD_OPTS" == *" $opt "* ]]; then cur=$(current_ws || true); fi
+  if [[ $# -ge 1 ]] && { [[ -z "$cur" ]] || is_ws_ref "$1"; }; then
     first=$(resolve_ws "$1") || exit 1
     shift
     set -- "$first" "$@"
-  elif [[ "$PICK_OPTS" == *" $opt "* && -t 0 && -t 2 ]]; then
+  elif [[ -n "$cur" ]]; then
+    echo "ws: using $cur (current directory)" >&2
+    set -- "$cur" "$@"
+  elif [[ $# -eq 0 && "$PICK_OPTS" == *" $opt "* && -t 0 && -t 2 ]]; then
     first=$(pick_ws) || exit 1
     set -- "$first"
   fi

@@ -389,5 +389,32 @@ w --config root --unset >/dev/null
 ! grep -q '^root=' "$home/.config/ws/config" || fail "unset left the line"
 w --config bogus >/dev/null 2>&1 && fail "bad --config key" || true
 
+# Current-workspace default: inside a workspace, no name needed (stdin is not a tty here).
+"$ws" --create cwdt >/dev/null; "$ws" --create other >/dev/null
+"$ws" --add cwdt "$tmp/src/web" web >/dev/null 2>&1; mkdir -p "$WS_ROOT/cwdt/notes"
+here() { local d=$1; shift; (cd "$d" && "$ws" "$@"); }
+out=$(here "$WS_ROOT/cwdt" --show 2>/dev/null)
+[[ "$out" == *"web "* ]] || fail "--show should default to cwdt"
+out=$(here "$WS_ROOT/cwdt" --show --json 2>/dev/null)
+python3 -c 'import json,sys; json.loads(sys.argv[1])' "$out" || fail "--show --json in cwdt"
+here "$WS_ROOT/cwdt/notes" --show >/dev/null 2>&1 || fail "real subdir should resolve cwdt"
+here "$WS_ROOT/cwdt/web" --show >/dev/null 2>&1 || fail "symlinked project dir should resolve cwdt"
+mkdir -p "$tmp/src/x"
+here "$WS_ROOT/cwdt" --add "$tmp/src/x" >/dev/null 2>&1; [[ -L $WS_ROOT/cwdt/x ]] || fail "--add should link into cwdt"
+here "$WS_ROOT/cwdt" --remove x >/dev/null 2>&1; [[ ! -e $WS_ROOT/cwdt/x ]] || fail "--remove should unlink from cwdt"
+out=$(here "$WS_ROOT/cwdt" --show other 2>/dev/null)
+[[ "$out" == *"/other/other.code-workspace"* ]] || fail "explicit name must win"
+here "$WS_ROOT/cwdt" --delete >/dev/null 2>&1 && fail "--delete needs a name" || true
+[[ -d $WS_ROOT/cwdt ]] || fail "--delete without a name removed cwdt"
+here "$tmp" --show >/dev/null 2>&1 && fail "--show outside a workspace needs a name" || true
+out=$(here "$WS_ROOT/cwdt" --list)
+[[ "$out" == *"* cwdt"* ]] || fail "--list should mark current"
+out=$(here "$tmp" --list)
+[[ "$out" != *"*"* ]] || fail "--list marks nothing outside a workspace"
+out=$(here "$WS_ROOT/cwdt" --list --json)
+[[ "$out" == *'"name":"cwdt"'*'"current":true'* && "$out" == *'"name":"other"'*'"current":false'* ]] || fail "--list --json current"
+rm -f "$WS_ROOT/other/other.code-workspace"
+here "$WS_ROOT/cwdt" --sync >/dev/null 2>&1
+[[ ! -e $WS_ROOT/other/other.code-workspace ]] || fail "--sync in cwdt should leave other alone"
 
 echo "ok"

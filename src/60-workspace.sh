@@ -154,7 +154,8 @@ cmd_delete() {
 
 cmd_list() {
   [[ -d "$WS_ROOT" ]] || die "$WS_ROOT missing; run: ws --setup"
-  local json=0 n i=0 count sep=""
+  local json=0 n i=0 count sep="" cur mark
+  cur=$(current_ws || true)
   [[ "${1:-}" == "--json" ]] && json=1
   [[ $# -le 1 && ( $# -eq 0 || $json -eq 1 ) ]] || die "usage: ws --list [--json]"
   [[ $json -eq 0 ]] || printf '['
@@ -162,11 +163,13 @@ cmd_list() {
     i=$((i + 1))
     count=$(collect_projects "$WS_ROOT/$n" 2>/dev/null | wc -l | tr -d ' ')
     if [[ $json -eq 1 ]]; then
-      printf '%s{"index":%d,"name":"%s","path":"%s","projects":%d}' \
-        "$sep" "$i" "$(json_escape "$n")" "$(json_escape "$WS_ROOT/$n")" "$count"
+      [[ "$n" == "$cur" ]] && mark=true || mark=false
+      printf '%s{"index":%d,"name":"%s","path":"%s","projects":%d,"current":%s}' \
+        "$sep" "$i" "$(json_escape "$n")" "$(json_escape "$WS_ROOT/$n")" "$count" "$mark"
       sep=","
     else
-      printf '%3d  %-24s %s project(s)\n' "$i" "$n" "$count"
+      [[ "$n" == "$cur" ]] && mark='*' || mark=' '
+      printf '%3d%s %-24s %s project(s)\n' "$i" "$mark" "$n" "$count"
     fi
   done < <(ws_names)
   [[ $json -eq 0 ]] || printf ']\n'

@@ -112,6 +112,16 @@ $ ws --code 1
 
 Run `--open`, `--code`, `--cursor`, `--claude`, `--cd`, `--show`, `--status`, `--pull` or `--fetch` with no name at a terminal and `ws` shows that list and asks. A workspace whose real name is all digits is still matched by name first. Numbers change when workspaces are added or removed, so use names in scripts.
 
+Inside a workspace (any directory under it, including through a symlinked project) you can leave the name out of every command except `--delete` and `--rename`:
+
+```text
+$ cd ~/workspaces/shop/api
+$ ws --status          # same as: ws --status shop
+$ ws --wt-add feat-x   # worktree in every shop repo
+```
+
+`ws --list` marks the current workspace with `*`. If the first argument is another workspace's name or number, it is read as the workspace, so type the name out when a repo or branch looks like one. `ws --sync` with no name inside a workspace syncs only that one.
+
 Every child directory is included, whether or not it is a Git repository. Broken symlinks are skipped. Loose files in the workspace folder stay on disk and are not editor roots.
 
 ## Clone-based workspaces

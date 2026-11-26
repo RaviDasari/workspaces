@@ -3,6 +3,9 @@ usage() {
 Usage: ws <option> [args]
 
 Anywhere <name> is a workspace, you can give its number from "ws --list" instead (ws --open 1).
+Run from inside a workspace, every command except --delete and --rename uses that workspace when
+you give no name (ws --status, ws --wt-add feat-x). A first argument that is another workspace's
+name or number is taken as the workspace, so type the name out if a repo or branch looks like one.
 Run --open, --code, --cursor, --claude, --cd, --show, --status, --pull or --fetch with no name at a
 terminal to pick from a menu.
 

@@ -53,6 +53,9 @@ usage() {
 Usage: ws <option> [args]
 
 Anywhere <name> is a workspace, you can give its number from "ws --list" instead (ws --open 1).
+Run from inside a workspace, every command except --delete and --rename uses that workspace when
+you give no name (ws --status, ws --wt-add feat-x). A first argument that is another workspace's
+name or number is taken as the workspace, so type the name out if a repo or branch looks like one.
 Run --open, --code, --cursor, --claude, --cd, --show, --status, --pull or --fetch with no name at a
 terminal to pick from a menu.
 
@@ -175,6 +178,9 @@ need_ws() {
 ALL_OPTS="--setup --config --root --create --add --remove --rename --delete --list --show --sync --open --code --cursor --claude --cd --clone --bootstrap --pull --fetch --status --exec --wt-add --wt-rm --checkpoint --restore --assistants --publish --completion --help"
 NAME_OPTS=" --add --remove --rename --delete --show --sync --open --code --cursor --claude --cd --clone --bootstrap --pull --fetch --status --exec --wt-add --wt-rm --checkpoint --restore --assistants --publish "
 PICK_OPTS=" --open --code --cursor --claude --cd --show --status --pull --fetch "
+# Commands that default to the workspace the shell is in. Not --delete or --rename: they are
+# destructive, so they always want an explicit name.
+CWD_OPTS=" --add --remove --show --sync --open --code --cursor --claude --cd --clone --bootstrap --pull --fetch --status --exec --wt-add --wt-rm --checkpoint --restore --assistants --publish "
 
 # Workspace names in `ws --list` order; a number N anywhere a <name> is expected means the Nth one.
 ws_names() {
@@ -195,6 +201,35 @@ resolve_ws() { # name-or-number -> name
   else
     printf '%s' "$ref"
   fi
+}
+
+# True if $1 names an existing workspace or is a number within the --list range (never dies).
+is_ws_ref() {
+  local ref=$1
+  if [[ "$ref" =~ ^[0-9]+$ && ! -e "$WS_ROOT/$ref" ]]; then
+    [[ $(( 10#$ref )) -ge 1 && $(( 10#$ref )) -le $(ws_names | wc -l) ]]
+  else
+    [[ "$ref" =~ ^[A-Za-z0-9_-][A-Za-z0-9._-]*$ && -d "$WS_ROOT/$ref" ]]
+  fi
+}
+
+# Name of the workspace the shell is in, if any. Checks the logical $PWD first (a cd through a
+# symlinked project stays under the root only logically), then the physical path.
+current_ws() {
+  local roots=("$WS_ROOT") r p rel n
+  r=$(realpath "$WS_ROOT" 2>/dev/null) && roots+=("$r")
+  for p in "$PWD" "$(pwd -P)"; do
+    for r in "${roots[@]}"; do
+      case "$p" in
+        "$r"/*)
+          rel=${p#"$r"/}; n=${rel%%/*}
+          if [[ "$n" =~ ^[A-Za-z0-9_-][A-Za-z0-9._-]*$ && -d "$WS_ROOT/$n" ]]; then
+            printf '%s' "$n"; return 0
+          fi ;;
+      esac
+    done
+  done
+  return 1
 }
 
 # Menu for commands run without a name. Needs a terminal; a lone workspace is used as is.
@@ -756,7 +791,8 @@ cmd_delete() {
 
 cmd_list() {
   [[ -d "$WS_ROOT" ]] || die "$WS_ROOT missing; run: ws --setup"
-  local json=0 n i=0 count sep=""
+  local json=0 n i=0 count sep="" cur mark
+  cur=$(current_ws || true)
   [[ "${1:-}" == "--json" ]] && json=1
   [[ $# -le 1 && ( $# -eq 0 || $json -eq 1 ) ]] || die "usage: ws --list [--json]"
   [[ $json -eq 0 ]] || printf '['
@@ -764,11 +800,13 @@ cmd_list() {
     i=$((i + 1))
     count=$(collect_projects "$WS_ROOT/$n" 2>/dev/null | wc -l | tr -d ' ')
     if [[ $json -eq 1 ]]; then
-      printf '%s{"index":%d,"name":"%s","path":"%s","projects":%d}' \
-        "$sep" "$i" "$(json_escape "$n")" "$(json_escape "$WS_ROOT/$n")" "$count"
+      [[ "$n" == "$cur" ]] && mark=true || mark=false
+      printf '%s{"index":%d,"name":"%s","path":"%s","projects":%d,"current":%s}' \
+        "$sep" "$i" "$(json_escape "$n")" "$(json_escape "$WS_ROOT/$n")" "$count" "$mark"
       sep=","
     else
-      printf '%3d  %-24s %s project(s)\n' "$i" "$n" "$count"
+      [[ "$n" == "$cur" ]] && mark='*' || mark=' '
+      printf '%3d%s %-24s %s project(s)\n' "$i" "$mark" "$n" "$count"
     fi
   done < <(ws_names)
   [[ $json -eq 0 ]] || printf ']\n'
@@ -1652,14 +1690,19 @@ fi
 [[ $# -ge 1 ]] || { usage; exit 1; }
 opt="$1"; shift
 
-# Commands whose first argument is a workspace: accept its --list number, and for the
-# ones in PICK_OPTS offer a menu when no name is given at a terminal.
+# Commands whose first argument is a workspace: accept its --list number. With no workspace
+# given, CWD_OPTS use the one the shell is in; PICK_OPTS offer a menu at a terminal.
 if [[ "$NAME_OPTS" == *" $opt "* ]]; then
-  if [[ $# -ge 1 ]]; then
+  cur=""
+  if [[ "$CWD_OPTS" == *" $opt "* ]]; then cur=$(current_ws || true); fi
+  if [[ $# -ge 1 ]] && { [[ -z "$cur" ]] || is_ws_ref "$1"; }; then
     first=$(resolve_ws "$1") || exit 1
     shift
     set -- "$first" "$@"
-  elif [[ "$PICK_OPTS" == *" $opt "* && -t 0 && -t 2 ]]; then
+  elif [[ -n "$cur" ]]; then
+    echo "ws: using $cur (current directory)" >&2
+    set -- "$cur" "$@"
+  elif [[ $# -eq 0 && "$PICK_OPTS" == *" $opt "* && -t 0 && -t 2 ]]; then
     first=$(pick_ws) || exit 1
     set -- "$first"
   fi

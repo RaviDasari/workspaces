@@ -2,6 +2,10 @@
 
 Release notes are published from the matching section below when a `v*` tag is pushed.
 
+## Unreleased
+
+- Inside a workspace, commands that take a workspace use it when you give no name: `ws --status`, `ws --pull`, `ws --wt-add feat-x`. `--delete` and `--rename` still need a name. `ws --sync` there syncs only that workspace. `ws --list` marks the current one with `*` (`"current"` in `--json`).
+
 ## 0.5.0
 
 - Workspace checkpoints: `ws --checkpoint <name> [label]` saves every repo's branch, commit, staged and unstaged changes, and untracked files without touching your working tree. `--checkpoint --list [--json]`, `--checkpoint --rm`, and `--restore <name> <label>` (always saves a `pre-restore-*` checkpoint first, so it can be undone). `--only` limits any of them to some projects.

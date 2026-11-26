@@ -19,6 +19,9 @@ need_ws() {
 ALL_OPTS="--setup --config --root --create --add --remove --rename --delete --list --show --sync --open --code --cursor --claude --cd --clone --bootstrap --pull --fetch --status --exec --wt-add --wt-rm --checkpoint --restore --assistants --publish --completion --help"
 NAME_OPTS=" --add --remove --rename --delete --show --sync --open --code --cursor --claude --cd --clone --bootstrap --pull --fetch --status --exec --wt-add --wt-rm --checkpoint --restore --assistants --publish "
 PICK_OPTS=" --open --code --cursor --claude --cd --show --status --pull --fetch "
+# Commands that default to the workspace the shell is in. Not --delete or --rename: they are
+# destructive, so they always want an explicit name.
+CWD_OPTS=" --add --remove --show --sync --open --code --cursor --claude --cd --clone --bootstrap --pull --fetch --status --exec --wt-add --wt-rm --checkpoint --restore --assistants --publish "
 
 # Workspace names in `ws --list` order; a number N anywhere a <name> is expected means the Nth one.
 ws_names() {
@@ -39,6 +42,35 @@ resolve_ws() { # name-or-number -> name
   else
     printf '%s' "$ref"
   fi
+}
+
+# True if $1 names an existing workspace or is a number within the --list range (never dies).
+is_ws_ref() {
+  local ref=$1
+  if [[ "$ref" =~ ^[0-9]+$ && ! -e "$WS_ROOT/$ref" ]]; then
+    [[ $(( 10#$ref )) -ge 1 && $(( 10#$ref )) -le $(ws_names | wc -l) ]]
+  else
+    [[ "$ref" =~ ^[A-Za-z0-9_-][A-Za-z0-9._-]*$ && -d "$WS_ROOT/$ref" ]]
+  fi
+}
+
+# Name of the workspace the shell is in, if any. Checks the logical $PWD first (a cd through a
+# symlinked project stays under the root only logically), then the physical path.
+current_ws() {
+  local roots=("$WS_ROOT") r p rel n
+  r=$(realpath "$WS_ROOT" 2>/dev/null) && roots+=("$r")
+  for p in "$PWD" "$(pwd -P)"; do
+    for r in "${roots[@]}"; do
+      case "$p" in
+        "$r"/*)
+          rel=${p#"$r"/}; n=${rel%%/*}
+          if [[ "$n" =~ ^[A-Za-z0-9_-][A-Za-z0-9._-]*$ && -d "$WS_ROOT/$n" ]]; then
+            printf '%s' "$n"; return 0
+          fi ;;
+      esac
+    done
+  done
+  return 1
 }
 
 # Menu for commands run without a name. Needs a terminal; a lone workspace is used as is.
