@@ -169,8 +169,8 @@ grep -q 'site--feature-pay' "$WS_ROOT/multi/multi.code-workspace" || fail "wt no
 
 echo dirty > "$WS_ROOT/multi/site--feature-pay/f.txt"
 "$ws" --status multi > "$tmp/status"
-grep -q 'site--feature-pay *wt *feature/pay *dirty (1 files)' "$tmp/status" || fail "status: $(cat "$tmp/status")"
-grep -q 'site *clone *main *dirty (1 files)' "$tmp/status" || fail "status clone: $(cat "$tmp/status")"
+grep -q 'site--feature-pay *wt *feature/pay *[^ ]* *dirty (1 files)' "$tmp/status" || fail "status: $(cat "$tmp/status")"
+grep -q 'site *clone *main *[^ ]* *dirty (1 files)' "$tmp/status" || fail "status clone: $(cat "$tmp/status")"
 "$ws" --wt-rm multi feature/pay 2>"$tmp/err" >/dev/null
 grep -q "uncommitted" "$tmp/err" || fail "dirty wt not protected"
 [[ -d $WS_ROOT/multi/site--feature-pay && ! -e $WS_ROOT/multi/remote-api--feature-pay ]] || fail "wt-rm partial"
@@ -186,6 +186,108 @@ git -C "$tmp/seed-web" commit -q --allow-empty -m two && git -C "$tmp/seed-web" 
 mkdir "$WS_ROOT/multi/notes"
 "$ws" --pull multi >/dev/null 2>&1
 [[ "$(git -C "$WS_ROOT/multi/site" log --oneline | wc -l | tr -d ' ')" == 2 ]] || fail "pull"
+
+# ---- v2: workspace numbers, menu, --json, --exec, --fetch, status flags, worktree options ----
+ln -s "$ws" "$tmp/bin/ws"   # completion shells out to `ws --config root`
+"$ws" --create aaa >/dev/null
+out=$("$ws" --list); grep -q '^ *1  aaa ' <<<"$out" && grep -q '^ *2  multi ' <<<"$out" || fail "list numbering: $out"
+[[ "$("$ws" --show 2)" == "$("$ws" --show multi)" ]] || fail "--show 2 should equal --show multi"
+"$ws" --code 1 >/dev/null
+[[ "$(cat "$tmp/code.out")" == "$WS_ROOT/aaa/aaa.code-workspace" ]] || fail "--code 1 opened $(cat "$tmp/code.out")"
+"$ws" --show 99 >/dev/null 2>"$tmp/err" && fail "--show 99 should fail" || true
+grep -q "no workspace number 99" "$tmp/err" || fail "bad number message: $(cat "$tmp/err")"
+"$ws" --show 0 >/dev/null 2>&1 && fail "--show 0 should fail" || true
+# A directory that is literally named with digits wins over the index.
+mkdir "$WS_ROOT/7"; "$ws" --sync 7 >/dev/null
+[[ -d "$WS_ROOT/7/.ws" ]] || fail "numeric workspace name not honored"
+printf 'y\n' | "$ws" --delete 7 >/dev/null
+# No name and no terminal: usage error, never a hang.
+"$ws" --code </dev/null >/dev/null 2>"$tmp/err" && fail "--code with no name should fail" || true
+grep -q "usage" "$tmp/err" || fail "no-name usage: $(cat "$tmp/err")"
+# Menu at a real terminal (pty): choosing 1 opens the first workspace.
+rm -f "$tmp/code.out"
+python3 - "$ws" <<'PYEOF'
+import os, pty, subprocess, sys
+m, s = pty.openpty()
+p = subprocess.Popen([sys.argv[1], "--code"], stdin=s, stderr=s, stdout=subprocess.DEVNULL)
+os.close(s)
+os.write(m, b"1\n")
+assert p.wait(timeout=30) == 0
+PYEOF
+[[ "$(cat "$tmp/code.out")" == "$WS_ROOT/aaa/aaa.code-workspace" ]] || fail "menu pick: $(cat "$tmp/code.out" 2>&1)"
+printf 'y\n' | "$ws" --delete aaa >/dev/null
+
+"$ws" --list --json | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert [w["name"] for w in d] == ["multi"] and d[0]["index"] == 1 and d[0]["projects"] >= 2, d'
+"$ws" --show multi --json | python3 -c '
+import json, sys
+d = {e["name"]: e for e in json.load(sys.stdin)}
+assert d["site"]["kind"] == "clone" and d["notes"]["kind"] == "local", d'
+"$ws" --status multi --json | python3 -c '
+import json, sys
+d = {e["name"]: e for e in json.load(sys.stdin)}
+s = d["site"]
+assert s["git"] is True and s["branch"] == "main" and s["type"] == "clone" and s["dirty_files"] >= 0, s
+assert s["merged"] is False and s["upstream_gone"] is False and s["last_commit_age_seconds"] >= 0, s
+assert d["notes"]["git"] is False, d["notes"]'
+
+"$ws" --fetch multi >/dev/null || fail "fetch"
+out=$("$ws" --exec multi --git-only -- git rev-parse --abbrev-ref HEAD); grep -q '=== site ===' <<<"$out" && ! grep -q '=== notes ===' <<<"$out" || fail "exec git-only: $out"
+out=$("$ws" --exec multi --only notes -- pwd); grep -q "notes$" <<<"$out" || fail "exec cwd: $out"
+"$ws" --exec multi --only site -- sh -c 'exit 3' >/dev/null 2>"$tmp/err" && fail "exec should propagate failure" || true
+grep -q "failed in 1 of 1" "$tmp/err" || fail "exec failure summary: $(cat "$tmp/err")"
+"$ws" --exec multi --only nope -- true >/dev/null 2>&1 && fail "exec with no match should fail" || true
+"$ws" --exec multi >/dev/null 2>&1 && fail "exec without command should fail" || true
+
+# status flags: a branch contained in main is "merged"; --delete-branch only drops merged branches
+git -C "$WS_ROOT/multi/site" branch old HEAD~1
+"$ws" --wt-add multi old site >/dev/null
+"$ws" --status multi | grep -q 'site--old .*merged' || fail "merged flag: $("$ws" --status multi)"
+"$ws" --wt-rm multi old site --delete-branch >/dev/null
+git -C "$WS_ROOT/multi/site" show-ref --verify -q refs/heads/old && fail "merged branch should be deleted" || true
+"$ws" --wt-add multi wip site >/dev/null
+git -C "$WS_ROOT/multi/site--wip" commit -q --allow-empty -m unmerged
+"$ws" --wt-rm multi wip site --delete-branch >/dev/null
+git -C "$WS_ROOT/multi/site" show-ref --verify -q refs/heads/wip || fail "unmerged branch must be kept"
+
+# upstream deleted on the remote shows as upstream-gone after a fetch
+git -C "$WS_ROOT/multi/site" push -q origin main:topic
+git -C "$WS_ROOT/multi/site" checkout -q -b topic --track origin/topic
+git -C "$tmp/remote-web.git" branch -q -D topic
+"$ws" --fetch multi >/dev/null
+"$ws" --status multi | grep -q 'site .*topic .*upstream-gone' || fail "upstream-gone: $("$ws" --status multi)"
+git -C "$WS_ROOT/multi/site" checkout -q main
+
+# --copy and --run on worktree creation
+echo SECRET=1 > "$WS_ROOT/multi/site/.env"
+"$ws" --wt-add multi envtest site --copy .env,missing.txt --run "touch ran.flag" >/dev/null
+[[ "$(cat "$WS_ROOT/multi/site--envtest/.env")" == SECRET=1 && -f "$WS_ROOT/multi/site--envtest/ran.flag" ]] || fail "--copy/--run"
+"$ws" --wt-add multi evil site --copy ../../etc/passwd >/dev/null 2>"$tmp/err"
+grep -q "unsafe" "$tmp/err" || fail "--copy path traversal not refused"
+rm -f "$WS_ROOT/multi/site/.env"
+"$ws" --wt-rm multi evil site >/dev/null
+rm -f "$WS_ROOT/multi/site--envtest/.env" "$WS_ROOT/multi/site--envtest/ran.flag"
+"$ws" --wt-rm multi envtest site >/dev/null
+
+# completions are valid shell and complete flags, workspaces and projects
+"$ws" --completion bash | bash -n || fail "bash completion syntax"
+if command -v zsh >/dev/null 2>&1; then "$ws" --completion zsh | zsh -n || fail "zsh completion syntax"; fi
+out=$("$ws" --completion fish); grep -q -- '-a --wt-add' <<<"$out" || fail "fish completion"
+"$ws" --completion nope >/dev/null 2>&1 && fail "bad shell accepted" || true
+bash -c '
+  eval "$("$1" --completion bash)"
+  COMP_WORDS=(ws --stat); COMP_CWORD=1; _ws
+  [[ "${COMPREPLY[*]}" == "--status" ]] || { echo "flag: ${COMPREPLY[*]}"; exit 1; }
+  COMP_WORDS=(ws --status ""); COMP_CWORD=2; _ws
+  [[ " ${COMPREPLY[*]} " == *" multi "* ]] || { echo "workspace: ${COMPREPLY[*]}"; exit 1; }
+  COMP_WORDS=(ws --claude multi ""); COMP_CWORD=3; _ws
+  [[ " ${COMPREPLY[*]} " == *" site "* ]] || { echo "project: ${COMPREPLY[*]}"; exit 1; }
+' _ "$ws" || fail "bash completion behavior"
+
+# the committed ws must match src/
+"$root/build.sh" --check || fail "ws is stale; run ./build.sh"
 
 # bootstrap rebuilds from workspace.conf alone (new machine)
 "$ws" --wt-add multi hotfix site >/dev/null

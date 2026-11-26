@@ -4,6 +4,25 @@
 
 ![Overview](assets/overview.png)
 
+## Why ws
+
+Several tools manage many repos or many worktrees. `ws` is the one that also sets up the editor and the AI assistant for the group.
+
+| | `ws` | [virtual-workspace](https://github.com/filipealva/virtual-workspace) | [Canopy](https://github.com/ashmitb95/canopy) | [Grove](https://pypi.org/project/gw-cli/) | [mani](https://github.com/alajmo/mani) / [meta](https://www.npmjs.com/meta) | [Worktrunk](https://github.com/ofek/worktrunk) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Many repos as one unit | yes | yes | yes | yes | yes | no (one repo) |
+| Link repos you already have | yes | no | ? | ? | ? | n/a |
+| Worktree per repo, same branch | yes | yes | yes | yes | no | yes |
+| VS Code / Cursor multi-root file | yes | no | ? | ? | no | no |
+| Claude Code / Codex config merged across repos | yes | yes | ? | CLAUDE.md copy | no | per-repo plugin |
+| Run a command in every repo | yes | no | ? | ? | yes | no |
+| Machine-readable output for agents | `--json` + a Claude skill | no | MCP server | ? | ? | ? |
+| Install | one bash file | scripts | Python | Python | Go / Node | Rust |
+
+`?` means I did not check. The other columns come from each project's description and may be out of date, so check their repos before relying on them.
+
+Use something else if you want an MCP server rather than a CLI the agent shells out to (Canopy), or a task runner with tags and a YAML config (mani).
+
 It covers everything [virtual-workspace](https://github.com/filipealva/virtual-workspace) does (clone-based workspaces, `workspace.conf`, merged `.claude`/`.codex` config, assistant conversion, pull, worktrees, status, publishing) and adds symlinked projects, VS Code/Cursor workspaces, Claude `--repo` mode, and tmux/herdr. The difference is that `ws` is a plain bash command, so it works from any shell and needs no plugin.
 
 The symlink folder is for the shell. Editors and Claude Code do not treat that folder as a multi-repo workspace on their own: the folder is not a Git repository, and editor Git discovery skips symlinks. `ws` records the real directory of each project and regenerates:
@@ -71,6 +90,18 @@ ws --show shop
 
 `web` is the name inside the workspace. Omit it to use the directory's basename.
 
+Anywhere a workspace name is expected you can type its number from `ws --list` instead:
+
+```text
+$ ws --list
+  1  shop                     3 project(s)
+  2  infra                    2 project(s)
+$ ws --open 2        # same as: ws --open infra
+$ ws --code 1
+```
+
+Run `--open`, `--code`, `--cursor`, `--claude`, `--cd`, `--show`, `--status`, `--pull` or `--fetch` with no name at a terminal and `ws` shows that list and asks. A workspace whose real name is all digits is still matched by name first. Numbers change when workspaces are added or removed, so use names in scripts.
+
 Every child directory is included, whether or not it is a Git repository. Broken symlinks are skipped. Loose files in the workspace folder stay on disk and are not editor roots.
 
 ## Clone-based workspaces
@@ -122,8 +153,16 @@ This writes into the projects' own `.claude`/`.codex` folders and overwrites sam
 ws --wt-add shop feature/checkout          # <repo>--feature-checkout for every repo
 ws --wt-add shop feature/checkout api web  # only these
 ws --status shop
+ws --fetch shop                            # git fetch --all --prune everywhere
 ws --pull shop                             # git pull --ff-only everywhere, reports failures, keeps going
 ws --wt-rm shop feature/checkout           # dirty worktrees are skipped; branches are kept
+ws --wt-rm shop feature/checkout --delete-branch   # also drop each branch git considers merged
+```
+
+Set a new worktree up in the same command. `--copy` brings untracked files such as `.env` over from the source repo (relative paths only), and `--run` runs a command in each new worktree. A failing `--run` is reported and does not stop the rest.
+
+```bash
+ws --wt-add shop feature/checkout --copy .env,.env.local --run "npm ci"
 ```
 
 A new worktree uses the existing local branch, else `origin/<branch>`, else a new branch from HEAD. Worktrees are real directories in the workspace, so they appear in the editor workspace, in Claude's `--add-dir` list, and in the merged agent links. `--wt-add` is incremental: it skips worktrees that already exist.
@@ -131,12 +170,50 @@ A new worktree uses the existing local branch, else `origin/<branch>`, else a ne
 `--status` prints one row per project:
 
 ```text
-DIRECTORY                      TYPE   BRANCH                    STATUS
------------------------------- ------ ------------------------- ------
-api                            clone  main                      clean
-api--feature-checkout          wt     feature/checkout          dirty (2 files) [+3/-0]
-web                            link   main                      clean
+DIRECTORY                      TYPE   BRANCH                    AGE   STATUS
+------------------------------ ------ ------------------------- ----- ------
+api                            clone  main                      2d    clean
+api--feature-checkout          wt     feature/checkout          3h    dirty (2 files) [+3/-0]
+api--old-fix                   wt     old-fix                   41d   clean merged
+web                            link   main                      5m    clean
 ```
+
+`AGE` is the last commit. `merged` means the branch is fully contained in the default branch, and `upstream-gone` means its remote branch was deleted. Both are cleanup candidates. `--status` reads local data only, so run `ws --fetch` first when you need fresh remote state.
+
+## Run a command everywhere
+
+```bash
+ws --exec shop -- git log -1 --oneline
+ws --exec shop --git-only -- git switch main
+ws --exec shop --only api,web -- npm test
+```
+
+Output is grouped under a `=== project ===` header. It keeps going when a project fails and exits 1 at the end if any did. This runs arbitrary commands in every project, so read it before you press enter.
+
+## For scripts and agents
+
+`--list`, `--show` and `--status` take `--json`:
+
+```bash
+ws --list --json
+ws --status shop --json | jq '.[] | select(.merged) | .name'
+```
+
+`mods/ws-skill` is a Claude Code plugin that teaches Claude to use these commands, with rules about which ones it should not run on its own. Install it the same way as `/repos`:
+
+```bash
+claude plugin marketplace add RaviDasari/workspaces && claude plugin install ws-skill@ws
+```
+
+## Shell completion
+
+```bash
+echo 'eval "$(ws --completion bash)"' >> ~/.bashrc
+echo 'eval "$(ws --completion zsh)"'  >> ~/.zshrc
+ws --completion fish > ~/.config/fish/completions/ws.fish
+```
+
+zsh needs `compinit` loaded first (`autoload -Uz compinit && compinit` earlier in `~/.zshrc`). Completes options, workspace names, project names, and the flags above. The bash script is tested; zsh is only syntax-checked and fish is untested.
 
 ## Publishing the workspace shell
 
@@ -202,23 +279,26 @@ ws --create <name> [git-url...]
 ws --clone <name> <url> [dir] [-b branch]
 ws --bootstrap <name>
 ws --pull <name>
-ws --status <name>
-ws --wt-add <name> <branch> [repo...]
-ws --wt-rm <name> <branch> [repo...]
+ws --fetch <name>
+ws --status <name> [--json]
+ws --exec <name> [--only a,b] [--git-only] -- <command...>
+ws --wt-add <name> <branch> [--run <cmd>] [--copy <f,f>] [repo...]
+ws --wt-rm <name> <branch> [--delete-branch] [repo...]
 ws --assistants <name> codex|claude|both
 ws --publish <name> [git-url]
 ws --add <name> <path> [linkname]
 ws --remove <name> <linkname>
 ws --rename <old> <new>
 ws --delete <name>
-ws --list
-ws --show <name>
+ws --list [--json]
+ws --show <name> [--json]
 ws --sync [name]
 ws --open <name>          # herdr, or tmux
 ws --code <name>
 ws --cursor <name>
 ws --claude <name> [--repo <link>] [--] [claude args...]
 ws --cd <name>
+ws --completion bash|zsh|fish
 ```
 
 `--delete` removes symlinks and generated configs. It asks first, and it refuses if the workspace contains any other real file or directory, including clones and worktrees. Project directories are never deleted.
@@ -245,6 +325,19 @@ Or inside Claude Code:
 It then loads in every session. Update with `claude plugin marketplace update ws`, remove with `claude plugin uninstall repos-overview@ws`.
 
 To try it without installing: `claude --plugin-dir mods/repos-overview`.
+
+## Development
+
+`ws` is one file you can install anywhere, but it is built from `src/*.sh`, which are joined in filename order.
+
+```bash
+$EDITOR src/70-git.sh
+./build.sh           # rewrites ./ws
+./build.sh --check   # exits 1 if ./ws is stale
+bash tests/smoke.sh  # runs ws against a temp folder; no network
+```
+
+Commit `ws` together with `src/`. The smoke test fails if they disagree.
 
 ## License
 

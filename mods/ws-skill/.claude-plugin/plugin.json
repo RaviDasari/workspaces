@@ -1,0 +1,8 @@
+{
+  "name": "ws-skill",
+  "version": "0.1.0",
+  "description": "Teaches Claude to drive the ws multi-repo workspace manager: list, status, exec, worktrees.",
+  "author": {
+    "name": "Ravi Dasari"
+  }
+}

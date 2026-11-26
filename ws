@@ -52,6 +52,10 @@ usage() {
   cat <<EOF
 Usage: ws <option> [args]
 
+Anywhere <name> is a workspace, you can give its number from "ws --list" instead (ws --open 1).
+Run --open, --code, --cursor, --claude, --cd, --show, --status, --pull or --fetch with no name at a
+terminal to pick from a menu.
+
   --setup                         Create the workspaces folder (sudo only if it needs it)
   --config [root [<dir>|--unset]] Show settings, print the workspaces folder, or set it once
   --root <dir> <command> ...      Use <dir> as the workspaces folder for this run only
@@ -60,8 +64,8 @@ Usage: ws <option> [args]
   --remove <name> <linkname>      Remove a symlink from workspace <name> (target untouched)
   --rename <old> <new>            Rename a workspace
   --delete <name>                 Delete a workspace (symlinks and generated configs only)
-  --list                          List all workspaces
-  --show <name>                   Show the symlinks in a workspace (broken ones flagged)
+  --list [--json]                 List all workspaces, numbered
+  --show <name> [--json]          Show the entries in a workspace (broken links flagged)
   --sync [name]                   Regenerate editor and Claude configs (every workspace if omitted)
   --open <name>                   Open workspace in herdr (if installed), else tmux
   --code <name>                   Open the multi-root workspace in VS Code
@@ -76,14 +80,21 @@ Clone-based workspaces (record repos in workspace.conf, rebuild anywhere):
                                   Clone a repo into the workspace and record it
   --bootstrap <name>              Clone anything missing, recreate worktrees, relink
   --pull <name>                   git pull --ff-only in every project (keeps going on failure)
-  --status <name>                 Table of projects: type, branch, dirty state, ahead/behind
-  --wt-add <name> <branch> [repo...]
-                                  Add a worktree <repo>--<branch> per repo (default: every repo)
-  --wt-rm <name> <branch> [repo...]
-                                  Remove those worktrees (skips dirty ones, keeps branches)
+  --fetch <name>                  git fetch --all --prune in every project
+  --status <name> [--json]        Table of projects: type, branch, age, dirty, ahead/behind,
+                                  upstream-gone, merged (local data; run --fetch first)
+  --exec <name> [--only a,b] [--git-only] -- <command...>
+                                  Run a command in every project (exit 1 if any fails)
+  --wt-add <name> <branch> [--run <cmd>] [--copy <f,f>] [repo...]
+                                  Add a worktree <repo>--<branch> per repo (default: every repo);
+                                  --copy brings untracked files (.env) over, --run runs a setup command
+  --wt-rm <name> <branch> [--delete-branch] [repo...]
+                                  Remove those worktrees (skips dirty ones); --delete-branch also
+                                  drops each branch git considers merged
   --assistants <name> codex|claude|both
                                   Copy agents/skills between .claude and .codex in each project
   --publish <name> [git-url]      Commit the workspace shell and push it (gh private repo if no url)
+  --completion bash|zsh|fish      Print a shell completion script
   -h, --help                      Show this help
 
 Generated inside each workspace (overwritten by --add, --remove, --rename, --sync,
@@ -125,6 +136,11 @@ Examples:
   ws --create shop git@github.com:acme/api.git git@github.com:acme/web.git
   ws --wt-add shop feature/checkout
   ws --status shop
+  ws --open 1                      # the first workspace in "ws --list"
+  ws --exec shop --git-only -- git log -1 --oneline
+  ws --wt-add shop feature/checkout --copy .env --run "npm ci"
+  ws --wt-rm shop feature/checkout --delete-branch
+  eval "$(ws --completion bash)"
 EOF
 }
 
@@ -142,6 +158,49 @@ valid_name() {
 need_ws() {
   valid_name "$1"
   [[ -d "$WS_ROOT/$1" ]] || die "workspace '$1' does not exist"
+}
+
+# Every command, and the ones whose first argument is a workspace (those accept a --list
+# number; PICK_OPTS also show a menu when run with no name at a terminal).
+ALL_OPTS="--setup --config --root --create --add --remove --rename --delete --list --show --sync --open --code --cursor --claude --cd --clone --bootstrap --pull --fetch --status --exec --wt-add --wt-rm --assistants --publish --completion --help"
+NAME_OPTS=" --add --remove --rename --delete --show --sync --open --code --cursor --claude --cd --clone --bootstrap --pull --fetch --status --exec --wt-add --wt-rm --assistants --publish "
+PICK_OPTS=" --open --code --cursor --claude --cd --show --status --pull --fetch "
+
+# Workspace names in `ws --list` order; a number N anywhere a <name> is expected means the Nth one.
+ws_names() {
+  local d
+  for d in "$WS_ROOT"/*/; do
+    [[ -d "$d" ]] && basename "$d"
+  done
+  return 0
+}
+
+resolve_ws() { # name-or-number -> name
+  local ref=$1 n
+  if [[ "$ref" =~ ^[0-9]+$ && ! -e "$WS_ROOT/$ref" ]]; then
+    n=$(( 10#$ref ))
+    [[ "$n" -ge 1 ]] && n=$(ws_names | sed -n "${n}p") || n=""
+    [[ -n "$n" ]] || die "no workspace number $ref (see: ws --list)"
+    printf '%s' "$n"
+  else
+    printf '%s' "$ref"
+  fi
+}
+
+# Menu for commands run without a name. Needs a terminal; a lone workspace is used as is.
+pick_ws() {
+  local names=() n i ans
+  while IFS= read -r n; do names+=("$n"); done < <(ws_names)
+  [[ ${#names[@]} -gt 0 ]] || die "no workspaces in $WS_ROOT (create one: ws --create <name>)"
+  if [[ ${#names[@]} -eq 1 ]]; then
+    echo "ws: using ${names[0]}" >&2
+    printf '%s' "${names[0]}"
+    return
+  fi
+  for i in "${!names[@]}"; do printf '%3d  %s\n' $((i + 1)) "${names[$i]}" >&2; done
+  read -r -p "Workspace (number or name): " ans || die "no workspace chosen"
+  [[ -n "$ans" ]] || die "no workspace chosen"
+  resolve_ws "$ans"
 }
 
 json_escape() {
@@ -315,7 +374,8 @@ fi
 
 cd "$cwd"
 export CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1
-exec "$bin" "${add[@]}" "${args[@]}"
+# ${arr[@]+...}: an empty array is an unbound variable under set -u in bash 3.2 (macOS /bin/bash).
+exec "$bin" ${add[@]+"${add[@]}"} ${args[@]+"${args[@]}"}
 EOF
   chmod +x "$dir/.ws/claude.sh"
 }
@@ -684,35 +744,68 @@ cmd_delete() {
 
 cmd_list() {
   [[ -d "$WS_ROOT" ]] || die "$WS_ROOT missing; run: ws --setup"
-  local d n
-  for d in "$WS_ROOT"/*/; do
-    [[ -d "$d" ]] || continue
-    n="$(collect_projects "${d%/}" 2>/dev/null | wc -l | tr -d ' ')"
-    printf '%-24s %s project(s)\n' "$(basename "$d")" "$n"
+  local json=0 n i=0 count sep=""
+  [[ "${1:-}" == "--json" ]] && json=1
+  [[ $# -le 1 && ( $# -eq 0 || $json -eq 1 ) ]] || die "usage: ws --list [--json]"
+  [[ $json -eq 0 ]] || printf '['
+  while IFS= read -r n; do
+    i=$((i + 1))
+    count=$(collect_projects "$WS_ROOT/$n" 2>/dev/null | wc -l | tr -d ' ')
+    if [[ $json -eq 1 ]]; then
+      printf '%s{"index":%d,"name":"%s","path":"%s","projects":%d}' \
+        "$sep" "$i" "$(json_escape "$n")" "$(json_escape "$WS_ROOT/$n")" "$count"
+      sep=","
+    else
+      printf '%3d  %-24s %s project(s)\n' "$i" "$n" "$count"
+    fi
+  done < <(ws_names)
+  [[ $json -eq 0 ]] || printf ']\n'
+}
+
+# One row per entry in a workspace: name<TAB>kind<TAB>detail
+# kind is link, broken, worktree, clone or local; detail is the link target, worktree source or clone url.
+show_rows() {
+  local dir="$WS_ROOT/$1" l b e
+  for l in "$dir"/*; do
+    b=$(basename "$l")
+    if [[ -L "$l" ]]; then
+      if [[ -e "$l" ]]; then printf '%s\tlink\t%s\n' "$b" "$(readlink "$l")"
+      else printf '%s\tbroken\t%s\n' "$b" "$(readlink "$l")"; fi
+    elif [[ -d "$l" ]]; then
+      e=$(conf_get "$dir" "$b" || true)
+      case "$e" in
+        *'|worktree:'*) printf '%s\tworktree\t%s\n' "$b" "$(cut -d'|' -f2 <<<"$e" | sed 's/^worktree://')" ;;
+        '') printf '%s\tlocal\t\n' "$b" ;;
+        *) printf '%s\tclone\t%s\n' "$b" "$(cut -d'|' -f2 <<<"$e")" ;;
+      esac
+    fi
   done
 }
 
 cmd_show() {
-  [[ $# -eq 1 ]] || die "usage: ws --show <name>"
+  [[ $# -ge 1 && $# -le 2 && ( $# -eq 1 || "$2" == "--json" ) ]] || die "usage: ws --show <name> [--json]"
   need_ws "$1"
-  local l file="$WS_ROOT/$1/$1.code-workspace"
-  for l in "$WS_ROOT/$1"/*; do
-    if [[ -L "$l" ]]; then
-      if [[ -e "$l" ]]; then
-        printf '%-24s -> %s\n' "$(basename "$l")" "$(readlink "$l")"
-      else
-        printf '%-24s -> %s  [BROKEN]\n' "$(basename "$l")" "$(readlink "$l")"
-      fi
-    elif [[ -d "$l" ]]; then
-      local e; e=$(conf_get "$WS_ROOT/$1" "$(basename "$l")" || true)
-      case "$e" in
-        *'|worktree:'*) printf '%-24s    worktree of %s\n' "$(basename "$l")" "$(cut -d'|' -f2 <<<"$e" | sed 's/^worktree://')" ;;
-        '') printf '%-24s    local directory\n' "$(basename "$l")" ;;
-        *) printf '%-24s    cloned\n' "$(basename "$l")" ;;
-      esac
-    fi
-  done
+  local name kind detail sep=""
+  if [[ $# -eq 2 ]]; then
+    printf '['
+    while IFS=$'\t' read -r name kind detail; do
+      printf '%s{"name":"%s","kind":"%s","detail":"%s"}' "$sep" "$(json_escape "$name")" "$kind" "$(json_escape "$detail")"
+      sep=","
+    done < <(show_rows "$1")
+    printf ']\n'
+    return
+  fi
+  while IFS=$'\t' read -r name kind detail; do
+    case "$kind" in
+      link)     printf '%-24s -> %s\n' "$name" "$detail" ;;
+      broken)   printf '%-24s -> %s  [BROKEN]\n' "$name" "$detail" ;;
+      worktree) printf '%-24s    worktree of %s\n' "$name" "$detail" ;;
+      clone)    printf '%-24s    cloned\n' "$name" ;;
+      *)        printf '%-24s    local directory\n' "$name" ;;
+    esac
+  done < <(show_rows "$1")
   echo
+  local file="$WS_ROOT/$1/$1.code-workspace"
   if [[ -f "$file" ]]; then
     echo "editor: $file"
   else
@@ -864,43 +957,153 @@ cmd_pull() {
   [[ "$failed" -eq 0 ]] || { echo "ws: $failed project(s) did not pull" >&2; return 1; }
 }
 
+# wt, link or clone
+project_type() { # dir name
+  local e
+  e=$(conf_get "$1" "$2" || true)
+  if [[ "$e" == *'|worktree:'* ]]; then echo wt
+  elif [[ -L "$1/$2" ]]; then echo link
+  else echo clone; fi
+}
+
+# Seconds -> 5m, 3h, 12d, 4mo, 2y
+fmt_age() {
+  local s=$1
+  if [[ "$s" -lt 3600 ]]; then echo "$((s / 60))m"
+  elif [[ "$s" -lt 86400 ]]; then echo "$((s / 3600))h"
+  elif [[ "$s" -lt 2592000 ]]; then echo "$((s / 86400))d"
+  elif [[ "$s" -lt 31536000 ]]; then echo "$((s / 2592000))mo"
+  else echo "$((s / 31536000))y"; fi
+}
+
+# Fill INFO_* for a git project. Uses local data only, so run ws --fetch first for fresh remote state.
+project_info() { # path
+  local path=$1 counts def head defsha ct
+  INFO_BRANCH=$(git -C "$path" branch --show-current 2>/dev/null || true)
+  [[ -n "$INFO_BRANCH" ]] || INFO_BRANCH=detached
+  INFO_DIRTY=$(git -C "$path" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+  INFO_AHEAD=0; INFO_BEHIND=0; INFO_GONE=0; INFO_MERGED=0; INFO_AGE_SECS=""
+  if counts=$(git -C "$path" rev-list --left-right --count '@{upstream}...HEAD' 2>/dev/null); then
+    read -r INFO_BEHIND INFO_AHEAD <<<"$counts"
+  fi
+  if [[ "$INFO_BRANCH" != detached ]]; then
+    [[ "$(git -C "$path" for-each-ref --format='%(upstream:track)' "refs/heads/$INFO_BRANCH" 2>/dev/null)" == *gone* ]] && INFO_GONE=1
+    def=$(git -C "$path" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null || true)
+    if [[ -z "$def" ]]; then
+      for def in main master; do git -C "$path" show-ref --verify --quiet "refs/heads/$def" && break || def=""; done
+    fi
+    if [[ -n "$def" && "$def" != "$INFO_BRANCH" && "$def" != "origin/$INFO_BRANCH" ]]; then
+      head=$(git -C "$path" rev-parse HEAD 2>/dev/null || true)
+      defsha=$(git -C "$path" rev-parse "$def" 2>/dev/null || true)
+      # Merged means fully contained in the default branch, not merely a fresh branch cut from it.
+      if [[ -n "$head" && "$head" != "$defsha" ]] && git -C "$path" merge-base --is-ancestor HEAD "$def" 2>/dev/null; then
+        INFO_MERGED=1
+      fi
+    fi
+  fi
+  ct=$(git -C "$path" log -1 --format=%ct 2>/dev/null || true)
+  [[ -z "$ct" ]] || INFO_AGE_SECS=$(( $(date +%s) - ct ))
+  [[ -z "$INFO_AGE_SECS" || "$INFO_AGE_SECS" -ge 0 ]] || INFO_AGE_SECS=0
+}
+
 cmd_status() {
-  [[ $# -eq 1 ]] || die "usage: ws --status <name>"
+  [[ $# -ge 1 && $# -le 2 && ( $# -eq 1 || "$2" == "--json" ) ]] || die "usage: ws --status <name> [--json]"
   need_ws "$1"
-  local dir="$WS_ROOT/$1" name path type branch st n counts ahead behind e
-  printf '%-30s %-6s %-25s %s\n' DIRECTORY TYPE BRANCH STATUS
-  printf '%-30s %-6s %-25s %s\n' ------------------------------ ------ ------------------------- ------
+  local dir="$WS_ROOT/$1" name path type st age json=0 sep=""
+  [[ $# -eq 2 ]] && json=1
+  if [[ $json -eq 1 ]]; then
+    printf '['
+  else
+    printf '%-30s %-6s %-25s %-5s %s\n' DIRECTORY TYPE BRANCH AGE STATUS
+    printf '%-30s %-6s %-25s %-5s %s\n' ------------------------------ ------ ------------------------- ----- ------
+  fi
   while IFS=$'\t' read -r name path; do
-    e=$(conf_get "$dir" "$name" || true)
-    if [[ "$e" == *'|worktree:'* ]]; then type=wt
-    elif [[ -L "$dir/$name" ]]; then type=link
-    else type=clone; fi
+    type=$(project_type "$dir" "$name")
     if ! is_git "$path"; then
-      printf '%-30s %-6s %-25s %s\n' "$name" "$type" "-" "(not a git repo)"
+      if [[ $json -eq 1 ]]; then
+        printf '%s{"name":"%s","type":"%s","path":"%s","git":false}' "$sep" "$(json_escape "$name")" "$type" "$(json_escape "$path")"
+        sep=","
+      else
+        printf '%-30s %-6s %-25s %-5s %s\n' "$name" "$type" "-" "-" "(not a git repo)"
+      fi
       continue
     fi
-    branch=$(git -C "$path" branch --show-current 2>/dev/null || true)
-    [[ -n "$branch" ]] || branch=detached
-    n=$(git -C "$path" status --porcelain 2>/dev/null | wc -l | tr -d ' ')
-    if [[ "$n" -eq 0 ]]; then st=clean; else st="dirty ($n files)"; fi
-    if counts=$(git -C "$path" rev-list --left-right --count '@{upstream}...HEAD' 2>/dev/null); then
-      read -r behind ahead <<<"$counts"
-      [[ "$ahead" -eq 0 && "$behind" -eq 0 ]] || st+=" [+$ahead/-$behind]"
+    project_info "$path"
+    if [[ $json -eq 1 ]]; then
+      printf '%s{"name":"%s","type":"%s","path":"%s","git":true,"branch":"%s","dirty_files":%d,"ahead":%d,"behind":%d,"upstream_gone":%s,"merged":%s,"last_commit_age_seconds":%s}' \
+        "$sep" "$(json_escape "$name")" "$type" "$(json_escape "$path")" "$(json_escape "$INFO_BRANCH")" \
+        "$INFO_DIRTY" "$INFO_AHEAD" "$INFO_BEHIND" \
+        "$([[ $INFO_GONE -eq 1 ]] && echo true || echo false)" "$([[ $INFO_MERGED -eq 1 ]] && echo true || echo false)" \
+        "${INFO_AGE_SECS:-null}"
+      sep=","
+      continue
     fi
-    printf '%-30s %-6s %-25s %s\n' "$name" "$type" "$branch" "$st"
+    if [[ "$INFO_DIRTY" -eq 0 ]]; then st=clean; else st="dirty ($INFO_DIRTY files)"; fi
+    [[ "$INFO_AHEAD" -eq 0 && "$INFO_BEHIND" -eq 0 ]] || st+=" [+$INFO_AHEAD/-$INFO_BEHIND]"
+    [[ "$INFO_GONE" -eq 0 ]] || st+=" upstream-gone"
+    [[ "$INFO_MERGED" -eq 0 ]] || st+=" merged"
+    age="-"; [[ -z "$INFO_AGE_SECS" ]] || age=$(fmt_age "$INFO_AGE_SECS")
+    printf '%-30s %-6s %-25s %-5s %s\n' "$name" "$type" "$INFO_BRANCH" "$age" "$st"
   done < <(collect_projects "$dir" 2>/dev/null)
+  [[ $json -eq 0 ]] || printf ']\n'
+}
+
+# git fetch --all --prune in every project; keeps going on failure.
+cmd_fetch() {
+  [[ $# -eq 1 ]] || die "usage: ws --fetch <name>"
+  need_ws "$1"
+  local name path failed=0
+  while IFS=$'\t' read -r name path; do
+    echo "=== $name ==="
+    if ! is_git "$path"; then echo "  (not a git repo, skipping)"; continue; fi
+    git -C "$path" fetch --all --prune --quiet || { echo "  (fetch failed)"; failed=$((failed + 1)); }
+  done < <(collect_projects "$WS_ROOT/$1" 2>/dev/null)
+  [[ "$failed" -eq 0 ]] || { echo "ws: $failed project(s) did not fetch" >&2; return 1; }
+}
+
+# Run a command in every project: ws --exec <name> [--only a,b] [--git-only] -- <cmd...>
+cmd_exec() {
+  local usage="usage: ws --exec <name> [--only repo,repo] [--git-only] -- <command...>"
+  [[ $# -ge 3 ]] || die "$usage"
+  local name=$1 only="" gitonly=0 p path failed=0 ran=0
+  shift
+  need_ws "$name"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --only) [[ $# -ge 2 ]] || die "$usage"; only=",$2,"; shift 2 ;;
+      --git-only) gitonly=1; shift ;;
+      --) shift; break ;;
+      *) die "$usage" ;;
+    esac
+  done
+  [[ $# -gt 0 ]] || die "$usage"
+  while IFS=$'\t' read -r p path; do
+    [[ -z "$only" || "$only" == *",$p,"* ]] || continue
+    if [[ "$gitonly" -eq 1 ]] && ! is_git "$path"; then continue; fi
+    echo "=== $p ==="
+    ran=$((ran + 1))
+    (cd "$path" && "$@") || { echo "  (exit status $?)"; failed=$((failed + 1)); }
+  done < <(collect_projects "$WS_ROOT/$name" 2>/dev/null)
+  [[ "$ran" -gt 0 ]] || die "no matching projects in '$name'"
+  [[ "$failed" -eq 0 ]] || { echo "ws: command failed in $failed of $ran project(s)" >&2; return 1; }
 }
 
 cmd_wt_add() {
-  [[ $# -ge 2 ]] || die "usage: ws --wt-add <name> <branch> [repo...]"
-  local name=$1 branch=$2 dir safe repos=() r wt created=0
+  local usage="usage: ws --wt-add <name> <branch> [--run <cmd>] [--copy <file,file>] [repo...]"
+  [[ $# -ge 2 ]] || die "$usage"
+  local name=$1 branch=$2 dir safe repos=() r wt created=0 run="" copy="" f
   shift 2
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --run)  [[ $# -ge 2 ]] || die "$usage"; run=$2; shift 2 ;;
+      --copy) [[ $# -ge 2 ]] || die "$usage"; copy=$2; shift 2 ;;
+      *) repos+=("$1"); shift ;;
+    esac
+  done
   need_ws "$name"
   dir="$WS_ROOT/$name"
   safe=$(safe_branch "$branch")
-  if [[ $# -gt 0 ]]; then
-    repos=("$@")
-  else
+  if [[ ${#repos[@]} -eq 0 ]]; then
     # Every project that is a primary checkout (a .git directory, not a worktree).
     while IFS=$'\t' read -r r _; do
       [[ -d "$(project_dir "$name" "$r")/.git" ]] && repos+=("$r")
@@ -918,6 +1121,21 @@ cmd_wt_add() {
       || die "could not create worktree for $r on '$branch'"
     conf_add "$dir" "$wt|worktree:$r|$branch"
     echo "Created $wt ($branch)"
+    # Untracked config the new checkout needs (.env and the like), copied from the source repo.
+    if [[ -n "$copy" ]]; then
+      while IFS= read -r f; do
+        [[ -n "$f" && "$f" != /* && "$f" != *..* ]] || { echo "  skipping unsafe --copy path '$f'" >&2; continue; }
+        if [[ -e "$(project_dir "$name" "$r")/$f" ]]; then
+          mkdir -p "$dir/$wt/$(dirname "$f")"
+          cp -R "$(project_dir "$name" "$r")/$f" "$dir/$wt/$f"
+          echo "  copied $f"
+        fi
+      done < <(tr ',' '\n' <<<"$copy")
+    fi
+    if [[ -n "$run" ]]; then
+      echo "  running: $run"
+      (cd "$dir/$wt" && sh -c "$run") || echo "  WARNING: '$run' failed in $wt" >&2
+    fi
     created=$((created + 1))
   done
   if [[ "$created" -eq 0 ]]; then echo "No new worktrees created."; return; fi
@@ -926,15 +1144,20 @@ cmd_wt_add() {
 }
 
 cmd_wt_rm() {
-  [[ $# -ge 2 ]] || die "usage: ws --wt-rm <name> <branch> [repo...]"
-  local name=$1 branch=$2 dir safe repos=() e wn spec b r wt removed=0 src
+  local usage="usage: ws --wt-rm <name> <branch> [--delete-branch] [repo...]"
+  [[ $# -ge 2 ]] || die "$usage"
+  local name=$1 branch=$2 dir safe repos=() e wn spec b r wt removed=0 src delbranch=0
   shift 2
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --delete-branch) delbranch=1; shift ;;
+      *) repos+=("$1"); shift ;;
+    esac
+  done
   need_ws "$name"
   dir="$WS_ROOT/$name"
   safe=$(safe_branch "$branch")
-  if [[ $# -gt 0 ]]; then
-    repos=("$@")
-  else
+  if [[ ${#repos[@]} -eq 0 ]]; then
     while IFS= read -r e; do
       IFS='|' read -r wn spec b <<<"$e"
       [[ "$spec" == worktree:* && "$b" == "$branch" ]] && repos+=("${spec#worktree:}")
@@ -953,12 +1176,22 @@ cmd_wt_rm() {
     conf_del "$dir" "$wt"
     echo "Removed $wt"
     removed=$((removed + 1))
+    # -d, not -D: git refuses unless the branch is merged, so unmerged work is never lost.
+    if [[ "$delbranch" -eq 1 ]]; then
+      if git -C "$src" branch -d "$branch" >/dev/null 2>&1; then
+        echo "  deleted merged branch $branch in $r"
+      else
+        echo "  kept branch $branch in $r (not merged, or checked out elsewhere)"
+      fi
+    fi
   done
   sync_one "$name" >/dev/null
   echo "Removed $removed worktree(s)."
-  for r in "${repos[@]}"; do
-    [[ -d "$dir/$r--$safe" ]] || echo "  branch kept; delete with: git -C $dir/$r branch -d $branch"
-  done
+  if [[ "$delbranch" -eq 0 ]]; then
+    for r in "${repos[@]}"; do
+      [[ -d "$dir/$r--$safe" ]] || echo "  branch kept; delete with: ws --wt-rm $name $branch --delete-branch, or: git -C $dir/$r branch -d $branch"
+    done
+  fi
 }
 
 copy_skill_file() { # md-file dest-skill-dir : wrap a bare markdown skill with frontmatter
@@ -1037,6 +1270,127 @@ cmd_publish() {
   fi
 }
 
+
+# ---- shell completion ---------------------------------------------------------
+# ws --completion bash|zsh|fish prints a script. Workspace and project names are read
+# from disk at completion time, so they stay current.
+
+cmd_completion() {
+  [[ $# -eq 1 ]] || die "usage: ws --completion bash|zsh|fish"
+  case "$1" in
+    bash) completion_bash ;;
+    zsh)  completion_zsh ;;
+    fish) completion_fish ;;
+    *) die "usage: ws --completion bash|zsh|fish" ;;
+  esac
+}
+
+completion_bash() {
+  cat <<EOS
+# bash completion for ws. Add to ~/.bashrc:  eval "\$(ws --completion bash)"
+_ws() {
+  local cur=\${COMP_WORDS[COMP_CWORD]} cmd=\${COMP_WORDS[1]} root
+  root=\$(command ws --config root 2>/dev/null)
+  COMPREPLY=()
+  if [[ \$COMP_CWORD -eq 1 ]]; then
+    COMPREPLY=(\$(compgen -W "$ALL_OPTS" -- "\$cur")); return
+  fi
+  case "\$cmd" in
+    --root) [[ \$COMP_CWORD -eq 2 ]] && { COMPREPLY=(\$(compgen -d -- "\$cur")); return; } ;;
+    --completion) COMPREPLY=(\$(compgen -W "bash zsh fish" -- "\$cur")); return ;;
+    --config) COMPREPLY=(\$(compgen -W "root" -- "\$cur")); return ;;
+  esac
+  if [[ "$NAME_OPTS" == *" \$cmd "* ]]; then
+    if [[ \$COMP_CWORD -eq 2 ]]; then
+      COMPREPLY=(\$(compgen -W "\$(ls "\$root" 2>/dev/null)" -- "\$cur")); return
+    fi
+    local ws=\${COMP_WORDS[2]}
+    case "\$cmd" in
+      --add) [[ \$COMP_CWORD -eq 3 ]] && COMPREPLY=(\$(compgen -d -- "\$cur")); return ;;
+      --assistants) COMPREPLY=(\$(compgen -W "codex claude both" -- "\$cur")); return ;;
+      --wt-add) COMPREPLY=(\$(compgen -W "--run --copy \$(cut -f1 "\$root/\$ws/.ws/projects.tsv" 2>/dev/null)" -- "\$cur")); return ;;
+      --wt-rm) COMPREPLY=(\$(compgen -W "--delete-branch \$(cut -f1 "\$root/\$ws/.ws/projects.tsv" 2>/dev/null)" -- "\$cur")); return ;;
+      --exec) COMPREPLY=(\$(compgen -W "--only --git-only --" -- "\$cur")); return ;;
+      --remove|--claude) COMPREPLY=(\$(compgen -W "\$(cut -f1 "\$root/\$ws/.ws/projects.tsv" 2>/dev/null)" -- "\$cur")); return ;;
+      --show|--status) COMPREPLY=(\$(compgen -W "--json" -- "\$cur")); return ;;
+    esac
+  fi
+  [[ "\$cmd" == --list ]] && COMPREPLY=(\$(compgen -W "--json" -- "\$cur"))
+}
+complete -F _ws ws
+EOS
+}
+
+completion_zsh() {
+  cat <<EOS
+#compdef ws
+# zsh completion for ws. Add to ~/.zshrc:  eval "\$(ws --completion zsh)"
+_ws() {
+  local root cmd=\$words[2]
+  root=\$(command ws --config root 2>/dev/null)
+  if (( CURRENT == 2 )); then
+    compadd -- ${ALL_OPTS}
+    return
+  fi
+  case "\$cmd" in
+    --root) (( CURRENT == 3 )) && { _files -/; return; } ;;
+    --completion) compadd -- bash zsh fish; return ;;
+    --config) compadd -- root; return ;;
+  esac
+  if [[ "$NAME_OPTS" == *" \$cmd "* ]]; then
+    if (( CURRENT == 3 )); then
+      compadd -- \${(f)"\$(ls "\$root" 2>/dev/null)"}
+      return
+    fi
+    local ws=\$words[3]
+    local -a projects; projects=(\${(f)"\$(cut -f1 "\$root/\$ws/.ws/projects.tsv" 2>/dev/null)"})
+    case "\$cmd" in
+      --add) (( CURRENT == 4 )) && _files -/; return ;;
+      --assistants) compadd -- codex claude both ;;
+      --wt-add) compadd -- --run --copy \$projects ;;
+      --wt-rm) compadd -- --delete-branch \$projects ;;
+      --exec) compadd -- --only --git-only -- ;;
+      --remove|--claude) compadd -- \$projects ;;
+      --show|--status) compadd -- --json ;;
+    esac
+    return
+  fi
+  [[ "\$cmd" == --list ]] && compadd -- --json
+}
+compdef _ws ws
+EOS
+}
+
+completion_fish() {
+  local o names=""
+  for o in $NAME_OPTS; do names+=" ${o#--}"; done
+  cat <<EOS
+# fish completion for ws. Save as ~/.config/fish/completions/ws.fish:  ws --completion fish > ~/.config/fish/completions/ws.fish
+function __ws_workspaces
+    ls (command ws --config root 2>/dev/null) 2>/dev/null
+end
+function __ws_projects
+    set -l ws (commandline -opc)[3]
+    cut -f1 (command ws --config root)/\$ws/.ws/projects.tsv 2>/dev/null
+end
+function __ws_at_name
+    set -l t (commandline -opc)
+    test (count \$t) -eq 2; and contains -- (string replace -- '--' '' \$t[2]) $names
+end
+EOS
+  for o in $ALL_OPTS; do
+    printf 'complete -c ws -n "test (count (commandline -opc)) -eq 1" -a %s\n' "$o"
+  done
+  cat <<'EOS'
+complete -c ws -n '__ws_at_name' -a '(__ws_workspaces)'
+complete -c ws -n 'test (count (commandline -opc)) -ge 3; and contains -- (commandline -opc)[2] --remove --claude' -a '(__ws_projects)'
+complete -c ws -n 'test (count (commandline -opc)) -ge 3; and contains -- (commandline -opc)[2] --wt-add' -a '(__ws_projects) --run --copy'
+complete -c ws -n 'test (count (commandline -opc)) -ge 3; and contains -- (commandline -opc)[2] --wt-rm' -a '(__ws_projects) --delete-branch'
+complete -c ws -n 'test (count (commandline -opc)) -ge 3; and contains -- (commandline -opc)[2] --assistants' -a 'codex claude both'
+complete -c ws -n 'contains -- (commandline -opc)[2] --show --status --list' -a '--json'
+complete -c ws -n 'contains -- (commandline -opc)[2] --completion' -a 'bash zsh fish'
+EOS
+}
 need_realpath
 if [[ "${1:-}" == "--root" ]]; then
   [[ $# -ge 3 ]] || die "usage: ws --root <dir> <command> [args]"
@@ -1045,6 +1399,19 @@ if [[ "${1:-}" == "--root" ]]; then
 fi
 [[ $# -ge 1 ]] || { usage; exit 1; }
 opt="$1"; shift
+
+# Commands whose first argument is a workspace: accept its --list number, and for the
+# ones in PICK_OPTS offer a menu when no name is given at a terminal.
+if [[ "$NAME_OPTS" == *" $opt "* ]]; then
+  if [[ $# -ge 1 ]]; then
+    first=$(resolve_ws "$1") || exit 1
+    shift
+    set -- "$first" "$@"
+  elif [[ "$PICK_OPTS" == *" $opt "* && -t 0 && -t 2 ]]; then
+    first=$(pick_ws) || exit 1
+    set -- "$first"
+  fi
+fi
 case "$opt" in
   --setup)  cmd_setup "$@" ;;
   --config) cmd_config "$@" ;;
@@ -1064,6 +1431,9 @@ case "$opt" in
   --clone)  cmd_clone "$@" ;;
   --bootstrap) cmd_bootstrap "$@" ;;
   --pull)   cmd_pull "$@" ;;
+  --fetch)  cmd_fetch "$@" ;;
+  --exec)   cmd_exec "$@" ;;
+  --completion) cmd_completion "$@" ;;
   --status) cmd_status "$@" ;;
   --wt-add) cmd_wt_add "$@" ;;
   --wt-rm)  cmd_wt_rm "$@" ;;
