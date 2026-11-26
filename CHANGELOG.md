@@ -2,11 +2,13 @@
 
 Release notes are published from the matching section below when a `v*` tag is pushed.
 
-## 0.4.1
+## 0.5.0
 
+- Workspace checkpoints: `ws --checkpoint <name> [label]` saves every repo's branch, commit, staged and unstaged changes, and untracked files without touching your working tree. `--checkpoint --list [--json]`, `--checkpoint --rm`, and `--restore <name> <label>` (always saves a `pre-restore-*` checkpoint first, so it can be undone). `--only` limits any of them to some projects.
+- `ws-skill` knows about checkpoints and will not restore or remove one unless asked.
 - CI on every push and PR: build check, smoke tests on Ubuntu and macOS (including macOS `/bin/bash` 3.2), and shellcheck.
 - Tagging a release now publishes the GitHub release and updates the Homebrew formula in `RaviDasari/homebrew-tap` automatically.
-- README: CI badge and release instructions. No changes to `ws` itself.
+- README: checkpoints section, CI and release badges, release instructions.
 
 ## 0.4.0
 

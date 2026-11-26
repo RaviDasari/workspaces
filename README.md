@@ -25,6 +25,7 @@ Several tools manage many repos or many worktrees. `ws` is the one that also set
 | VS Code / Cursor multi-root file | yes | no | ? | ? | no | no |
 | Claude Code / Codex config merged across repos | yes | yes | ? | CLAUDE.md copy | no | per-repo plugin |
 | Run a command in every repo | yes | no | ? | ? | yes | no |
+| Checkpoint and restore every repo at once | yes | no | ? | ? | ? | ? |
 | Machine-readable output for agents | `--json` + a Claude skill | no | MCP server | ? | ? | ? |
 | Install | one bash file | scripts | Python | Python | Go / Node | Rust |
 
@@ -199,6 +200,27 @@ ws --exec shop --only api,web -- npm test
 
 Output is grouped under a `=== project ===` header. It keeps going when a project fails and exits 1 at the end if any did. This runs arbitrary commands in every project, so read it before you press enter.
 
+## Checkpoints
+
+A checkpoint is a save point for the whole workspace. Take one before a risky change that spans repos, such as a refactor or an agent run, and go back with a single command if it goes wrong.
+
+```bash
+ws --checkpoint shop before-refactor     # label defaults to a timestamp
+ws --checkpoint shop --only api,web wip  # only these projects
+ws --checkpoint shop --list              # --json too
+ws --restore shop before-refactor
+ws --restore shop before-refactor --only api
+ws --checkpoint shop --rm before-refactor
+```
+
+For every git project, a checkpoint records the branch, the commit, staged and unstaged changes, and untracked files. Your files, index, and branches stay as they are. Ignored files (`node_modules`, `.env`) are not saved, and `--restore` leaves them alone too.
+
+`--restore` puts each project back exactly. It checks out the saved branch, resets it to the saved commit (dropping commits made since), restores staged and unstaged changes, and deletes untracked files created after the checkpoint. Before it changes anything, it saves the current state as `pre-restore-<time>`, so a restore can be undone with the command it prints.
+
+Claude Code and Cursor have their own checkpoints, but those cover only the files the assistant edited in one session. These cover every repo in the workspace, including commits, branch switches, and anything run from a shell.
+
+Each project gets one commit, shaped like a `git stash` entry, kept alive by a ref under `refs/ws-checkpoints/` so `git gc` cannot remove it. The list of checkpoints lives in `.ws/checkpoints/`, which is not published. Checkpoints are local to this machine: they are never pushed, and `--rm` and `--delete` remove their refs. Linked projects are your real repos, so restoring a workspace also restores them. A project in the middle of a merge or rebase is skipped.
+
 ## For scripts and agents
 
 `--list`, `--show` and `--status` take `--json`:
@@ -292,6 +314,9 @@ ws --fetch <name>
 ws --status <name> [--json]
 ws --exec <name> [--only a,b] [--git-only] -- <command...>
 ws --wt-add <name> <branch> [--run <cmd>] [--copy <f,f>] [repo...]
+ws --checkpoint <name> [label] [--only a,b]
+ws --checkpoint <name> --list [--json] | --rm <label...>
+ws --restore <name> <label> [--only a,b]
 ws --wt-rm <name> <branch> [--delete-branch] [repo...]
 ws --assistants <name> codex|claude|both
 ws --publish <name> [git-url]

@@ -36,14 +36,21 @@ workspaces are added or removed.
 | Same branch in several repos | `ws --wt-add <ws> <branch> [repo...] [--copy .env] [--run "<setup cmd>"]` |
 | Clean up a finished branch | `ws --wt-rm <ws> <branch> [repo...] [--delete-branch]` |
 | Add a repo | `ws --clone <ws> <url>` or `ws --add <ws> <path>` |
+| Save point before a risky multi-repo change | `ws --checkpoint <ws> <label>` |
+| See save points | `ws --checkpoint <ws> --list --json` |
 
 `--wt-add` creates `<repo>--<branch>` directories inside the workspace; work and commit in those, one
 commit per repo. `--wt-rm` skips worktrees with uncommitted changes, and `--delete-branch` only deletes a
 branch git considers merged.
 
+`--checkpoint` saves every repo's branch, commit, staged and unstaged changes, and untracked files
+without changing anything, so take one (with a descriptive label) before a large edit across repos.
+`--restore` resets branches and deletes newer untracked files. It first saves a `pre-restore-*`
+checkpoint and prints the command that undoes it; tell the user that command.
+
 ## Rules
 
-- Never pass `--delete`, `--wt-rm`, or `--publish` without the user asking. `--delete` and `--publish`
+- Never pass `--delete`, `--wt-rm`, `--restore`, `--checkpoint --rm`, or `--publish` without the user asking. `--delete` and `--publish`
   prompt on stdin; do not pipe `y` into them on your own.
 - `--exec` runs arbitrary commands in every project. Show the user the command first when it writes,
   installs, or deletes anything.

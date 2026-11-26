@@ -88,6 +88,21 @@ Skipped by request: SHA pinning (old #3), CI (old #7, done separately on GitHub)
 - Decisions: agent interface is `--json` + `mods/ws-skill` (no MCP server); split is `src/*.sh` -> built single `ws`.
 - Lesson: never put `$(...)` in an unquoted heredoc comment (it executes); and write test blocks with a file, not a nested heredoc.
 
+---
+
+# Round 3: workspace checkpoints
+
+- [x] `--checkpoint <name> [label] [--only]`, `--list [--json]`, `--rm`; `--restore <name> <label> [--only]` (src/75-checkpoint.sh)
+- [x] Wire into option lists, help, completions, `--delete` (drops refs), README, ws-skill
+- [x] Smoke tests: round trip, gc survival, undo, --only, list/json, rm, delete cleanup
+
+## Review (round 3)
+- Design: one stash-shaped commit per project (tree = working files incl. untracked, parent 1 = HEAD, parent 2 = staged tree), built with a throwaway index so nothing in the repo changes; kept alive by `refs/ws-checkpoints/<sha>`; manifest in `.ws/checkpoints/<label>`.
+- Restore always saves `pre-restore-<time>` first and only touches projects that saved, so it is undoable. Ignored files are neither saved nor removed.
+- Verified: smoke passes under bash 5.3 and /bin/bash 3.2, `./build.sh --check`, shellcheck, `zsh -n` on the completion.
+- Not handled: submodule contents (only the gitlink), projects mid-merge/rebase (skipped), and two checkpoints within the same second sort by name in `--list`.
+- Lesson: `cmd | grep -q` under `pipefail` is flaky (SIGPIPE); capture output first.
+
 ## Backlog
 - [ ] **SHA pinning**: `ws --lock <name>` records each clone's and worktree's commit SHA (e.g. in `workspace.lock`); `ws --bootstrap <name> --locked` checks out exactly those SHAs for a reproducible rebuild. Today `workspace.conf` stores only URL and branch, so bootstrap gets whatever is current.
 - [x] **CI (GitHub Actions)**: run `tests/smoke.sh` and `./build.sh --check` on macOS and Linux, plus shellcheck on `src/*.sh`. Include macOS `/bin/bash` 3.2, which already caught one bug.
