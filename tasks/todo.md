@@ -90,4 +90,4 @@ Skipped by request: SHA pinning (old #3), CI (old #7, done separately on GitHub)
 
 ## Backlog
 - [ ] **SHA pinning**: `ws --lock <name>` records each clone's and worktree's commit SHA (e.g. in `workspace.lock`); `ws --bootstrap <name> --locked` checks out exactly those SHAs for a reproducible rebuild. Today `workspace.conf` stores only URL and branch, so bootstrap gets whatever is current.
-- [ ] **CI (GitHub Actions)**: run `tests/smoke.sh` and `./build.sh --check` on macOS and Linux, plus shellcheck on `src/*.sh`. Include macOS `/bin/bash` 3.2, which already caught one bug.
+- [x] **CI (GitHub Actions)**: run `tests/smoke.sh` and `./build.sh --check` on macOS and Linux, plus shellcheck on `src/*.sh`. Include macOS `/bin/bash` 3.2, which already caught one bug.

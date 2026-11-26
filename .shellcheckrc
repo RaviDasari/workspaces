@@ -1,0 +1,7 @@
+shell=bash
+# src/*.sh is concatenated into one file, so variables set in one part and used in another look unused.
+disable=SC2034
+# Tildes in quoted strings are display text, not paths.
+disable=SC2088
+# `a && b || c` is used deliberately for terse control flow.
+disable=SC2015
