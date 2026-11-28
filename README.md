@@ -23,41 +23,7 @@ brew install RaviDasari/tap/ws
 ws --create shop && ws --add shop ~/code/api && ws --add shop ~/code/web && ws --claude shop
 ```
 
-## Why ws
-
-Several tools manage many repos or many worktrees. `ws` is the one that also sets up the editor and the AI assistant for the group.
-
-| | `ws` | [virtual-workspace](https://github.com/filipealva/virtual-workspace) | [Canopy](https://github.com/ashmitb95/canopy-cli) | [Grove](https://github.com/nicksenap/grove) | [mani](https://github.com/alajmo/mani) / [meta](https://github.com/mateodelnorte/meta) | [Worktrunk](https://github.com/max-sixty/worktrunk) |
-| --- | --- | --- | --- | --- | --- | --- |
-| Many repos as one unit | yes | yes | yes | yes | yes | no (one repo) |
-| Link repos you already have | yes | no | partial (`init` discovers repos) | partial (registers repo folders) | yes | partial (works in any clone) |
-| Worktree per repo, same branch | yes | yes | yes | yes | mani: partial, meta: no | yes (one repo) |
-| VS Code / Cursor multi-root file | yes | no | undocumented | undocumented | undocumented | no |
-| Claude Code / Codex config merged across repos | yes | yes | no (MCP server and a skill) | no (a skill that teaches agents `gw`) | undocumented | no (Claude Code plugin) |
-| Run a command in every repo | yes | no | one repo at a time | partial (fixed git commands: status, sync) | yes | across one repo's worktrees |
-| Checkpoint and restore every repo at once | yes | no | no (feature-tagged stash only) | undocumented | undocumented | no (per-branch backup only) |
-| Machine-readable output for agents | `--json` + a Claude skill | no | `--json` + MCP server | `-o json` + MCP server + a skill | mani: no, meta: undocumented | `--format=json` + Claude Code plugin |
-| Install | one bash file | scripts | Python | Python or Go | Go / Node | Rust |
-
-Checked against each project's README and docs in November 2026; nothing was installed or run. "Undocumented" means the pages I read do not mention it, not that the feature is absent. Canopy's original repo is now a VS Code extension, so the link goes to its CLI, `canopy-cli`. Grove's docs pages were partly unreachable, so check its repo before relying on its column.
-
-Use something else if you want an MCP server rather than a CLI the agent shells out to (Canopy), or a task runner with tags and a YAML config (mani).
-
-It covers everything [virtual-workspace](https://github.com/filipealva/virtual-workspace) does (clone-based workspaces, `workspace.conf`, merged `.claude`/`.codex` config, assistant conversion, pull, worktrees, status, publishing) and adds symlinked projects, VS Code/Cursor workspaces, Claude `--repo` mode, and tmux/herdr. The difference is that `ws` is a plain bash command, so it works from any shell and needs no plugin.
-
-The symlink folder is for the shell. Editors and Claude Code do not treat that folder as a multi-repo workspace on their own: the folder is not a Git repository, and editor Git discovery skips symlinks. `ws` records the real directory of each project and regenerates:
-
-| File | Used by |
-| --- | --- |
-| `<name>.code-workspace` | VS Code and Cursor. One workspace folder per project, using the real path so Git is detected. |
-| `.claude/settings.local.json` | Claude Code, when you start it in the workspace directory. Grants file access to each project. |
-| `.ws/claude.sh` | `ws --claude`. Starts Claude with `--add-dir` for every project so skills are loaded too. |
-| `.claude/{agents,commands,skills,hooks}/<project>--<item>`, `.codex/{agents,skills}/…` | Symlinks that merge every project's assistant config, so a session started in the workspace sees all of it. |
-| `workspace.conf` | Manifest of clones and worktrees. `ws --bootstrap` rebuilds from it. |
-| `CLAUDE.md`, `AGENTS.md`, `README.md` | Written once, then yours. |
-| `.gitignore` | Regenerated, so the workspace shell can be its own git repo that never tracks project contents. |
-
-Everything except the three docs is rewritten by `--add`, `--remove`, `--rename`, `--sync`, `--code`, `--cursor`, and `--claude`. Edit the symlink list, not the generated files.
+**[Install](#install)** · **[Quick start](#quick-start)** · **[Features](#clone-based-workspaces)** · **[Commands](#commands)** · **[How it compares](#why-ws)**
 
 ## Install
 
@@ -256,27 +222,6 @@ ws --status shop --json | jq '.[] | select(.merged) | .name'
 claude plugin marketplace add RaviDasari/workspaces && claude plugin install ws-skill@ws
 ```
 
-## Shell completion
-
-```bash
-echo 'eval "$(ws --completion bash)"' >> ~/.bashrc
-echo 'eval "$(ws --completion zsh)"'  >> ~/.zshrc
-ws --completion fish > ~/.config/fish/completions/ws.fish
-```
-
-zsh needs `compinit` loaded first (`autoload -Uz compinit && compinit` earlier in `~/.zshrc`). Completes options, workspace names, project names, and the flags above. The bash script is tested; zsh is only syntax-checked and fish is untested.
-
-## Publishing the workspace shell
-
-```bash
-ws --publish shop                          # private GitHub repo via gh
-ws --publish shop git@github.com:me/shop.git
-```
-
-Asks first, then commits only `.gitignore`, `CLAUDE.md`, `AGENTS.md`, `README.md`, and `workspace.conf`. Project contents are never tracked.
-
-![Workflow](assets/workflow.png)
-
 ## VS Code and Cursor
 
 Both editors open the same file:
@@ -320,6 +265,27 @@ That session reads `.claude/settings.local.json`, which lists each project under
 
 Claude's Git status follows the directory you start in. The symlink folder is not a repository. Use `--repo <linkname>` when you want Claude's Git view to be one of the projects.
 
+## Claude Code mod: `/repos`
+
+`mods/repos-overview` adds a `/repos` slash command to Claude Code. It lists every git repo in the session directory with its branch, ahead/behind, and a short count of staged, modified, and untracked files. Start Claude in a workspace (`ws --claude <name>`) and run `/repos`.
+
+Install it with one command from any terminal:
+
+```bash
+claude plugin marketplace add RaviDasari/workspaces && claude plugin install repos-overview@ws
+```
+
+Or inside Claude Code:
+
+```text
+/plugin marketplace add RaviDasari/workspaces
+/plugin install repos-overview@ws
+```
+
+It then loads in every session. Update with `claude plugin marketplace update ws`, remove with `claude plugin uninstall repos-overview@ws`.
+
+To try it without installing: `claude --plugin-dir mods/repos-overview`.
+
 ## Commands
 
 ```text
@@ -359,26 +325,62 @@ ws --completion bash|zsh|fish
 
 `--cd` only changes directory when a shell function wraps `ws`. Otherwise it prints the path.
 
-## Claude Code mod: `/repos`
-
-`mods/repos-overview` adds a `/repos` slash command to Claude Code. It lists every git repo in the session directory with its branch, ahead/behind, and a short count of staged, modified, and untracked files. Start Claude in a workspace (`ws --claude <name>`) and run `/repos`.
-
-Install it with one command from any terminal:
+## Shell completion
 
 ```bash
-claude plugin marketplace add RaviDasari/workspaces && claude plugin install repos-overview@ws
+echo 'eval "$(ws --completion bash)"' >> ~/.bashrc
+echo 'eval "$(ws --completion zsh)"'  >> ~/.zshrc
+ws --completion fish > ~/.config/fish/completions/ws.fish
 ```
 
-Or inside Claude Code:
+zsh needs `compinit` loaded first (`autoload -Uz compinit && compinit` earlier in `~/.zshrc`). Completes options, workspace names, project names, and the flags above. The bash script is tested; zsh is only syntax-checked and fish is untested.
 
-```text
-/plugin marketplace add RaviDasari/workspaces
-/plugin install repos-overview@ws
+## Publishing the workspace shell
+
+```bash
+ws --publish shop                          # private GitHub repo via gh
+ws --publish shop git@github.com:me/shop.git
 ```
 
-It then loads in every session. Update with `claude plugin marketplace update ws`, remove with `claude plugin uninstall repos-overview@ws`.
+Asks first, then commits only `.gitignore`, `CLAUDE.md`, `AGENTS.md`, `README.md`, and `workspace.conf`. Project contents are never tracked.
 
-To try it without installing: `claude --plugin-dir mods/repos-overview`.
+![Workflow](assets/workflow.png)
+
+## Why ws
+
+Several tools manage many repos or many worktrees. `ws` is the one that also sets up the editor and the AI assistant for the group.
+
+| | `ws` | [virtual-workspace](https://github.com/filipealva/virtual-workspace) | [Canopy](https://github.com/ashmitb95/canopy-cli) | [Grove](https://github.com/nicksenap/grove) | [mani](https://github.com/alajmo/mani) / [meta](https://github.com/mateodelnorte/meta) | [Worktrunk](https://github.com/max-sixty/worktrunk) |
+| --- | --- | --- | --- | --- | --- | --- |
+| Many repos as one unit | yes | yes | yes | yes | yes | no (one repo) |
+| Link repos you already have | yes | no | partial (`init` discovers repos) | partial (registers repo folders) | yes | partial (works in any clone) |
+| Worktree per repo, same branch | yes | yes | yes | yes | mani: partial, meta: no | yes (one repo) |
+| VS Code / Cursor multi-root file | yes | no | undocumented | undocumented | undocumented | no |
+| Claude Code / Codex config merged across repos | yes | yes | no (MCP server and a skill) | no (a skill that teaches agents `gw`) | undocumented | no (Claude Code plugin) |
+| Run a command in every repo | yes | no | one repo at a time | partial (fixed git commands: status, sync) | yes | across one repo's worktrees |
+| Checkpoint and restore every repo at once | yes | no | no (feature-tagged stash only) | undocumented | undocumented | no (per-branch backup only) |
+| Machine-readable output for agents | `--json` + a Claude skill | no | `--json` + MCP server | `-o json` + MCP server + a skill | mani: no, meta: undocumented | `--format=json` + Claude Code plugin |
+| Install | one bash file | scripts | Python | Python or Go | Go / Node | Rust |
+
+Checked against each project's README and docs in November 2026; nothing was installed or run. "Undocumented" means the pages I read do not mention it, not that the feature is absent. Canopy's original repo is now a VS Code extension, so the link goes to its CLI, `canopy-cli`. Grove's docs pages were partly unreachable, so check its repo before relying on its column.
+
+Use something else if you want an MCP server rather than a CLI the agent shells out to (Canopy), or a task runner with tags and a YAML config (mani).
+
+It covers everything [virtual-workspace](https://github.com/filipealva/virtual-workspace) does (clone-based workspaces, `workspace.conf`, merged `.claude`/`.codex` config, assistant conversion, pull, worktrees, status, publishing) and adds symlinked projects, VS Code/Cursor workspaces, Claude `--repo` mode, and tmux/herdr. The difference is that `ws` is a plain bash command, so it works from any shell and needs no plugin.
+
+The symlink folder is for the shell. Editors and Claude Code do not treat that folder as a multi-repo workspace on their own: the folder is not a Git repository, and editor Git discovery skips symlinks. `ws` records the real directory of each project and regenerates:
+
+| File | Used by |
+| --- | --- |
+| `<name>.code-workspace` | VS Code and Cursor. One workspace folder per project, using the real path so Git is detected. |
+| `.claude/settings.local.json` | Claude Code, when you start it in the workspace directory. Grants file access to each project. |
+| `.ws/claude.sh` | `ws --claude`. Starts Claude with `--add-dir` for every project so skills are loaded too. |
+| `.claude/{agents,commands,skills,hooks}/<project>--<item>`, `.codex/{agents,skills}/…` | Symlinks that merge every project's assistant config, so a session started in the workspace sees all of it. |
+| `workspace.conf` | Manifest of clones and worktrees. `ws --bootstrap` rebuilds from it. |
+| `CLAUDE.md`, `AGENTS.md`, `README.md` | Written once, then yours. |
+| `.gitignore` | Regenerated, so the workspace shell can be its own git repo that never tracks project contents. |
+
+Everything except the three docs is rewritten by `--add`, `--remove`, `--rename`, `--sync`, `--code`, `--cursor`, and `--claude`. Edit the symlink list, not the generated files.
 
 ## Development
 
